@@ -29,18 +29,31 @@ This guide provides comprehensive information for developers working on the UK D
 
 2. **Environment Configuration**
    ```bash
-   # Copy environment templates
-   cp .env.example .env
-   cp .env.local.example .env.local
+   # Review the comprehensive environment template
+   cat .env.template
    
-   # Generate encryption keys
-   ./scripts/generate-keys.sh
+   # Copy and customize for your environment
+   cp .env.template .env
    
-   # Initialize configuration
-   ./scripts/init-config.sh
+   # Add your government API credentials (see .env.example for guidance)
+   # HMRC_CLIENT_ID, DVLA_API_KEY, NHS_CLIENT_ID, etc.
+   
+   # All secrets will be auto-generated during initialization
    ```
 
-3. **Development Dependencies**
+3. **Automated Platform Initialization**
+   ```bash
+   # Full system setup (recommended for first-time setup)
+   ./initialize-platform.sh
+   
+   # Quick development setup
+   ./quick-start.sh
+   
+   # Manual setup (advanced users)
+   docker-compose -f infra/docker-compose.yml up -d
+   ```
+
+4. **Development Dependencies**
    ```bash
    # Install Docker and Docker Compose
    # macOS
@@ -64,6 +77,169 @@ This guide provides comprehensive information for developers working on the UK D
    # Verify services are running
    ./scripts/check-system-status.sh
    ```
+
+## 🚀 Initialization System
+
+The platform provides three initialization scripts for different development scenarios:
+
+### initialize-platform.sh - Full System Setup
+
+This is the comprehensive initialization script that sets up all 7 components systematically:
+
+```bash
+./initialize-platform.sh
+```
+
+**5-Phase Process:**
+
+1. **Configuration Injection** (30-60 seconds)
+   - Generates `.env` files for each component
+   - Sets up database connection strings
+   - Configures service discovery and authentication
+   - Creates JWT secrets and encryption keys
+
+2. **Dependency Installation** (2-4 minutes)
+   - `cargo build --release` (Rust core engine)
+   - `go mod download && go build` (Go microservices)
+   - `./gradlew build` (Kotlin government APIs)
+   - `pip install -r requirements.txt` (Python ML pipeline)
+   - `npm install && npm run build` (TypeScript portals)
+   - `flutter pub get && flutter build` (Mobile wallet)
+
+3. **Component Building** (1-2 minutes)
+   - Parallel compilation where possible
+   - Docker image building for containerized services
+   - Binary validation and linking verification
+
+4. **Service Startup** (2-3 minutes)
+   - Infrastructure: PostgreSQL, Kafka, Redis, monitoring
+   - Core: Rust engine, Go gateway
+   - Integration: Kotlin government connectors
+   - Analytics: Python fraud detection
+   - UI: Web portals and mobile dev server
+
+5. **Health Verification** (30 seconds)
+   - Service endpoint health checks
+   - Database connectivity validation
+   - Inter-service communication verification
+
+### quick-start.sh - Development Options
+
+Interactive script with 4 initialization modes:
+
+```bash
+./quick-start.sh
+
+# Options:
+# 1. Full Development (All 7 components) - 3-5 minutes
+# 2. Infrastructure Only (Docker services) - 1-2 minutes  
+# 3. API Development (Core + Services) - 2-3 minutes
+# 4. ML Development (Infrastructure + Analytics) - 2-3 minutes
+```
+
+### stop-platform.sh - Clean Shutdown
+
+Graceful shutdown and cleanup:
+
+```bash
+./stop-platform.sh
+
+# Features:
+# - Stops all background processes
+# - Shuts down Docker services
+# - Cleans temporary files
+# - Resets development environment
+```
+
+### Troubleshooting Initialization
+
+**Common Issues:**
+
+1. **Port Conflicts**
+   ```bash
+   # Check for port usage
+   lsof -i :8080,:8081,:3001,:5432
+   
+   # Kill conflicting processes
+   ./stop-platform.sh
+   ```
+
+2. **Dependency Failures**
+   ```bash
+   # Check individual component build
+   cd core-id-engine && cargo check
+   cd digital-id-services && go mod tidy
+   cd gov-connectors && ./gradlew clean build
+   ```
+
+3. **Environment Issues**
+   ```bash
+   # Regenerate configuration
+   rm -rf .env.* && ./initialize-platform.sh
+   
+   # Check Docker resources
+   docker system prune -f
+   ```
+
+## 📋 Environment Template System
+
+The platform uses a comprehensive template-based configuration system for managing the complex multi-service environment:
+
+### Template Files
+
+| File | Purpose |
+|------|---------|
+| `.env.template` | Master configuration template with all 200+ variables |
+| `.env.example` | Simplified example showing required government API keys |
+| `.env` | Generated from template with auto-generated secrets |
+
+### Configuration Categories
+
+1. **Platform Metadata** - Environment, debug mode, logging levels
+2. **Core Infrastructure** - Database, Redis, Kafka connection strings
+3. **Security & Crypto** - JWT secrets, encryption keys, Ed25519 keypairs  
+4. **Service Endpoints** - Ports and URLs for all 7 components
+5. **Government APIs** - Credentials for 25+ government system integrations
+6. **Component Settings** - Language-specific configurations (Rust, Go, Kotlin, Python, TypeScript, Flutter)
+7. **Monitoring** - Prometheus, Grafana, Jaeger configuration
+8. **Rate Limiting** - Per-service and global rate limiting settings
+9. **Feature Flags** - Enable/disable platform features
+10. **Development Settings** - Hot reload, CORS, mock services
+
+### Secret Generation
+
+The initialization system automatically generates:
+
+- **Database passwords** (PostgreSQL, Redis)
+- **JWT secrets** (64-character hex keys)
+- **Encryption keys** (AES-256 keys)
+- **Ed25519 keypairs** (Digital signatures)
+- **API secrets** (Service authentication)
+- **Admin passwords** (Grafana, monitoring)
+
+### Component Configuration Injection
+
+Each component receives a customized `.env` file:
+
+```bash
+# Generated component-specific files:
+core-id-engine/.env          # Rust crypto engine config
+digital-id-services/.env     # Go microservices config  
+gov-connectors/.env          # Kotlin Spring Boot config
+fraud-analytics/.env         # Python ML pipeline config
+web-portal/citizen-portal/.env    # Next.js portal config
+web-portal/admin-dashboard/.env   # Admin dashboard config
+mobile-wallet/.env          # Flutter mobile config
+infra/.env                  # Docker infrastructure config
+```
+
+### Customization Workflow
+
+1. **Review Template**: `cat .env.template` (200+ configuration options)
+2. **Copy Template**: `cp .env.template .env`
+3. **Add API Keys**: Edit `.env` to add government API credentials
+4. **Auto-Generate**: Run `./initialize-platform.sh` to generate secrets
+5. **Component Injection**: System creates component-specific configurations
 
 ### Development Architecture
 
