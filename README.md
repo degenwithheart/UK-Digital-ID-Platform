@@ -137,6 +137,8 @@ sequenceDiagram
     🦀-->>🚀: Signed Credential
     🚀->>🐘: Store Credential
     🚀-->>📱: Verification Complete
+```
+
 ---
 
 ## 🚀 Performance & Security Features
@@ -364,7 +366,6 @@ kubectl exec -it kafka-pod -- kafka-topics.sh --list --bootstrap-server localhos
 ### Community
 - **Issues**: Report bugs and feature requests via GitHub Issues
 - **Discussions**: Technical discussions in GitHub Discussions
-- **Security**: Report vulnerabilities via security@digital-id-platform.gov.uk
 
 ---
 
