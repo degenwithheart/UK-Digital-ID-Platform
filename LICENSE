@@ -1,0 +1,87 @@
+MIT License
+
+Copyright (c) 2025 degenwithheart - UK Digital Identity Platform
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---
+
+## Additional Terms for UK Digital Identity Platform
+
+### Government Use License Addendum
+
+This software is developed as an open-source implementation of digital identity 
+concepts for educational, research, and development purposes. While the code is 
+freely available under the MIT license, any actual deployment for official 
+government identity services would require:
+
+1. **Regulatory Compliance**: Full compliance with UK data protection laws, 
+   GDPR, and relevant government security standards.
+
+2. **Security Certification**: Appropriate security clearances and certifications 
+   for production deployment in government environments.
+
+3. **Data Protection**: Implementation of additional safeguards for handling 
+   personally identifiable information (PII) and sensitive government data.
+
+4. **Audit Requirements**: Regular security audits and penetration testing 
+   as required by government standards.
+
+### Disclaimer
+
+This implementation is provided for demonstration and development purposes. 
+It should not be used for actual identity verification or credential issuance 
+without proper security review, testing, and compliance validation.
+
+The authors make no claims about the production readiness or security of this 
+implementation for handling real personal identity data or government services.
+
+### Third-Party Components
+
+This project includes components and dependencies that may be subject to their 
+own licensing terms:
+
+- Rust ecosystem crates (various licenses)
+- Go modules and libraries (various licenses)
+- Kotlin/Java dependencies (various licenses)
+- Python packages (various licenses)
+- Node.js/TypeScript packages (various licenses)
+- Flutter/Dart packages (various licenses)
+
+Please review the individual component licenses for complete terms.
+
+### Cryptographic Software Notice
+
+This software includes cryptographic software. The country in which you currently 
+reside may have restrictions on the import, possession, use, and/or re-export 
+to another country, of encryption software. BEFORE using any encryption software, 
+please check your country's laws, regulations and policies concerning the import, 
+possession, or use, and re-export of encryption software, to see if this is permitted.
+
+### Export Control
+
+This software may be subject to export control regulations. Users are responsible 
+for complying with all applicable export control laws and regulations.
+
+---
+
+**Project**: UK Digital Identity Platform
+**License**: MIT License with Government Use Addendum
+**Copyright**: © 2025 degenwithheart
+**Version**: 1.0.0

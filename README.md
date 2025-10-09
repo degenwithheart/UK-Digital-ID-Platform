@@ -183,8 +183,8 @@ sequenceDiagram
 ### Development Setup
 ```bash
 # Clone repository
-git clone <repository-url>
-cd ID/SYSTEM
+git clone https://github.com/degenwithheart/UK-Digital-ID-Platform.git
+cd UK-Digital-ID-Platform
 
 # Start infrastructure services  
 docker-compose -f infra/docker-compose.yml up -d postgres kafka zookeeper
@@ -232,18 +232,18 @@ curl http://localhost:8081/actuator/health   # Kotlin Connectors
 ## 🗂️ Repository Structure
 
 ```
-SYSTEM/
+UK-Digital-ID-Platform/
 ├── 📁 core-id-engine/          # 🦀 Rust cryptographic engine
 │   ├── src/lib.rs              # Core identity operations
 │   ├── Cargo.toml              # Rust dependencies  
 │   └── README.md               # Component documentation
 │
-├── 📁 digital-id-services/     # 🚀 Go API gateway
+├── 📁 digital-id-services/     # 🚀 Go API gateway & microservices
 │   ├── gateway/main.go         # HTTP server & routes
 │   ├── go.mod                  # Go dependencies
 │   └── README.md               # Component documentation  
 │
-├── 📁 gov-connectors/          # ☕ Kotlin government APIs
+├── 📁 gov-connectors/          # ☕ Kotlin government APIs (25 systems)
 │   ├── src/main/kotlin/        # Spring Boot services
 │   ├── build.gradle.kts        # Kotlin dependencies
 │   └── README.md               # Component documentation
@@ -258,18 +258,32 @@ SYSTEM/
 │   ├── pubspec.yaml            # Flutter dependencies
 │   └── README.md               # Component documentation
 │
-├── 📁 web-portal/              # 🌐 TypeScript web interface
-│   ├── pages/index.tsx         # Next.js pages
-│   ├── package.json            # Node.js dependencies
+├── 📁 web-portal/              # 🌐 TypeScript web interfaces
+│   ├── citizen-portal/         # Citizen web portal
+│   ├── admin-dashboard/        # Admin management interface
 │   └── README.md               # Component documentation
 │
-├── 📁 infra/                   # 🐳 Infrastructure configuration
+├── 📁 infra/                   # 🐳 Infrastructure & deployment
 │   ├── docker-compose.yml      # Multi-service orchestration
-│   ├── prometheus.yml          # Metrics configuration  
 │   ├── k8s/                    # Kubernetes manifests
-│   └── README.md               # Component documentation
+│   ├── helm/                   # Helm charts
+│   └── README.md               # Infrastructure documentation
 │
-└── 📄 README.md                # This overview document
+├── 📁 docs/                    # 📚 Comprehensive documentation suite
+│   ├── README.md               # Documentation hub & navigation
+│   ├── api.md                  # REST API reference
+│   ├── architecture.md         # System architecture guide
+│   ├── security.md             # Security framework
+│   ├── deployment.md           # Deployment procedures
+│   ├── developer-guide.md      # Development setup & standards
+│   └── operations.md           # Production operations guide
+│
+├── 📄 README.md                # This overview document
+├── 📄 CONTRIBUTING.md          # Contribution guidelines
+├── 📄 LICENSE                  # MIT License with government addendum
+├── 📄 .gitignore               # Git ignore patterns
+├── 🔧 check-system-status.sh   # System health check script
+└── 🔄 sync-components.sh       # Component synchronization script
 ```
 
 ---
@@ -352,18 +366,25 @@ kubectl exec -it kafka-pod -- kafka-topics.sh --list --bootstrap-server localhos
 ## 📞 Support & Contributing
 
 ### Documentation Links
-- [API Documentation](./docs/api.md) - REST endpoint specifications
-- [Architecture Guide](./docs/architecture.md) - Detailed system design
-- [Deployment Guide](./docs/deployment.md) - Production setup instructions
-- [Security Guide](./docs/security.md) - Security best practices
+- **[📚 Documentation Hub](./docs/README.md)** - Complete documentation index and navigation
+- **[📡 API Reference](./docs/api.md)** - REST endpoint specifications with examples
+- **[🏗️ Architecture Guide](./docs/architecture.md)** - Detailed system design and component interactions
+- **[🚀 Deployment Guide](./docs/deployment.md)** - Production setup and Kubernetes deployment
+- **[🔒 Security Guide](./docs/security.md)** - Security framework and best practices
+- **[👩‍💻 Developer Guide](./docs/developer-guide.md)** - Development setup and coding standards
+- **[🔧 Operations Guide](./docs/operations.md)** - Monitoring, troubleshooting, and production operations
 
 ### Contributing Guidelines
+Please read our **[🤝 Contributing Guide](./CONTRIBUTING.md)** for detailed information on:
 1. **Code Style**: Follow language-specific formatting (rustfmt, gofmt, prettier)
 2. **Testing**: Maintain >90% test coverage for new features
 3. **Documentation**: Update README files for any component changes
 4. **Security**: All PRs undergo security review for sensitive operations
+5. **Pull Request Process**: Review requirements and approval workflow
 
-### Community
+### Community & Support
+- **[🤝 Contributing Guide](./CONTRIBUTING.md)** - Comprehensive contribution guidelines
+- **[📜 License](./LICENSE)** - MIT License with government use addendum
 - **Issues**: Report bugs and feature requests via GitHub Issues
 - **Discussions**: Technical discussions in GitHub Discussions
 
