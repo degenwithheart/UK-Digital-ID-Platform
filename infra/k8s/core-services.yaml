@@ -1,0 +1,597 @@
+# Rust Core Engine Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rust-core
+  namespace: digital-identity
+  labels:
+    app: rust-core
+    component: core-engine
+    version: "1.0.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: rust-core
+  template:
+    metadata:
+      labels:
+        app: rust-core
+        component: core-engine
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: rust-core
+        image: digital-identity/rust-core:1.0.0
+        ports:
+        - containerPort: 3000
+          name: http
+        - containerPort: 9090
+          name: metrics
+        env:
+        - name: RUST_LOG
+          value: "info"
+        - name: RUST_ENV
+          value: "production"
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service:5432/digital_id"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@redis-service:6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        - name: KAFKA_BROKERS
+          value: "kafka-service:9092"
+        - name: VAULT_ADDR
+          value: "http://vault-service:8200"
+        - name: METRICS_PORT
+          value: "9090"
+        - name: JAEGER_AGENT_HOST
+          value: "jaeger-service"
+        - name: JAEGER_AGENT_PORT
+          value: "6831"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 3000
+          initialDelaySeconds: 40
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 3000
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "1000m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: true
+          runAsNonRoot: true
+          runAsUser: 1000
+        volumeMounts:
+        - name: tmp
+          mountPath: /tmp
+        - name: var-run
+          mountPath: /var/run
+      volumes:
+      - name: tmp
+        emptyDir: {}
+      - name: var-run
+        emptyDir: {}
+---
+# Rust Core Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: rust-core-service
+  namespace: digital-identity
+  labels:
+    app: rust-core
+spec:
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: http
+  - port: 9090
+    targetPort: 9090
+    name: metrics
+  selector:
+    app: rust-core
+  type: ClusterIP
+---
+# Go Gateway Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-gateway
+  namespace: digital-identity
+  labels:
+    app: go-gateway
+    component: api-gateway
+    version: "1.0.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: go-gateway
+  template:
+    metadata:
+      labels:
+        app: go-gateway
+        component: api-gateway
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: go-gateway
+        image: digital-identity/go-gateway:1.0.0
+        ports:
+        - containerPort: 8080
+          name: http
+        - containerPort: 8443
+          name: https
+        env:
+        - name: GIN_MODE
+          value: "release"
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: jwt-secret
+              key: jwt-secret
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service:5432/digital_id"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@redis-service:6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        - name: KAFKA_BROKERS
+          value: "kafka-service:9092"
+        - name: VAULT_ADDR
+          value: "http://vault-service:8200"
+        - name: RUST_CORE_URL
+          value: "http://rust-core-service:3000"
+        - name: KOTLIN_CONNECTORS_URL
+          value: "http://kotlin-connectors-service:8080"
+        - name: FRAUD_DETECTION_URL
+          value: "http://python-fraud-service:8000"
+        - name: CORS_ORIGINS
+          value: "https://portal.digital-identity.gov.uk"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1.5Gi"
+            cpu: "1500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+        volumeMounts:
+        - name: tls-secret
+          mountPath: /etc/ssl/certs
+          readOnly: true
+      volumes:
+      - name: tls-secret
+        secret:
+          secretName: tls-secret
+---
+# Go Gateway Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-gateway-service
+  namespace: digital-identity
+  labels:
+    app: go-gateway
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  - port: 8443
+    targetPort: 8443
+    name: https
+  selector:
+    app: go-gateway
+  type: ClusterIP
+---
+# Go Auth Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-auth
+  namespace: digital-identity
+  labels:
+    app: go-auth
+    component: authentication
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: go-auth
+  template:
+    metadata:
+      labels:
+        app: go-auth
+        component: authentication
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: go-auth
+        image: digital-identity/go-auth:1.0.0
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: GIN_MODE
+          value: "release"
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service:5432/digital_id"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@redis-service:6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        - name: JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: jwt-secret
+              key: jwt-secret
+        - name: VAULT_ADDR
+          value: "http://vault-service:8200"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+---
+# Go Auth Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-auth-service
+  namespace: digital-identity
+  labels:
+    app: go-auth
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: go-auth
+  type: ClusterIP
+---
+# Go Verification Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-verification
+  namespace: digital-identity
+  labels:
+    app: go-verification
+    component: verification
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: go-verification
+  template:
+    metadata:
+      labels:
+        app: go-verification
+        component: verification
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: go-verification
+        image: digital-identity/go-verification:1.0.0
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: GIN_MODE
+          value: "release"
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service:5432/digital_id"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@redis-service:6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        - name: KAFKA_BROKERS
+          value: "kafka-service:9092"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+---
+# Go Verification Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-verification-service
+  namespace: digital-identity
+  labels:
+    app: go-verification
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: go-verification
+  type: ClusterIP
+---
+# Go Registration Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-registration
+  namespace: digital-identity
+  labels:
+    app: go-registration
+    component: registration
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: go-registration
+  template:
+    metadata:
+      labels:
+        app: go-registration
+        component: registration
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: go-registration
+        image: digital-identity/go-registration:1.0.0
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: GIN_MODE
+          value: "release"
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service:5432/digital_id"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@redis-service:6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+---
+# Go Registration Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-registration-service
+  namespace: digital-identity
+  labels:
+    app: go-registration
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: go-registration
+  type: ClusterIP
+---
+# Go Audit Service Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: go-audit
+  namespace: digital-identity
+  labels:
+    app: go-audit
+    component: audit
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: go-audit
+  template:
+    metadata:
+      labels:
+        app: go-audit
+        component: audit
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: go-audit
+        image: digital-identity/go-audit:1.0.0
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: GIN_MODE
+          value: "release"
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service:5432/digital_id"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: KAFKA_BROKERS
+          value: "kafka-service:9092"
+        - name: ELASTICSEARCH_URL
+          value: "http://elasticsearch-service:9200"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+---
+# Go Audit Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: go-audit-service
+  namespace: digital-identity
+  labels:
+    app: go-audit
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: go-audit
+  type: ClusterIP

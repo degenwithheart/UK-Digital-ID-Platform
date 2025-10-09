@@ -1,0 +1,49 @@
+[package]
+name = "core-id-engine"
+version = "1.0.0"
+edition = "2021"
+authors = ["ID System Team"]
+description = "High-performance core identity verification engine"
+
+[lib]
+name = "core_id_engine"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+tokio = { version = "1.35", features = ["full"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+reqwest = { version = "0.11", features = ["json", "rustls-tls"] }
+uuid = { version = "1.6", features = ["v4"] }
+chrono = { version = "0.4", features = ["serde"] }
+anyhow = "1.0"
+thiserror = "1.0"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+redis = { version = "0.24", features = ["tokio-comp", "connection-manager"] }
+sqlx = { version = "0.7", features = ["runtime-tokio-rustls", "postgres", "uuid", "chrono"] }
+argon2 = "0.5"
+jsonwebtoken = "9.2"
+ring = "0.17"
+base64 = "0.21"
+futures = "0.3"
+crossbeam = "0.8"
+rayon = "1.8"
+dashmap = "5.5"
+blake3 = "1.5"
+zstd = "0.13"
+hex = "0.4"
+aes-gcm = "0.10"
+rand = "0.8"
+
+[dev-dependencies]
+criterion = "0.5"
+tokio-test = "0.4"
+
+[[bench]]
+name = "verification_bench"
+harness = false
+
+[[bin]]
+name = "core-engine-server"
+path = "src/bin/server.rs"

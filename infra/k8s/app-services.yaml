@@ -1,0 +1,522 @@
+# Kotlin Government Connectors Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: kotlin-connectors
+  namespace: digital-identity
+  labels:
+    app: kotlin-connectors
+    component: government-connectors
+    version: "1.0.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: kotlin-connectors
+  template:
+    metadata:
+      labels:
+        app: kotlin-connectors
+        component: government-connectors
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: kotlin-connectors
+        image: digital-identity/kotlin-connectors:1.0.0
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: SPRING_PROFILES_ACTIVE
+          value: "production"
+        - name: DATABASE_URL
+          value: "jdbc:postgresql://postgres-service:5432/digital_id"
+        - name: DATABASE_USERNAME
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-user
+        - name: DATABASE_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@redis-service:6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        - name: KAFKA_BROKERS
+          value: "kafka-service:9092"
+        - name: VAULT_ADDR
+          value: "http://vault-service:8200"
+        - name: HMRC_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys-secret
+              key: hmrc-api-key
+        - name: NHS_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys-secret
+              key: nhs-api-key
+        - name: DVLA_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys-secret
+              key: dvla-api-key
+        - name: DWP_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys-secret
+              key: dwp-api-key
+        - name: COMPANIES_HOUSE_API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: api-keys-secret
+              key: companies-house-api-key
+        livenessProbe:
+          httpGet:
+            path: /actuator/health
+            port: 8080
+          initialDelaySeconds: 120
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /actuator/health/readiness
+            port: 8080
+          initialDelaySeconds: 60
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "2000m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1000
+---
+# Kotlin Connectors Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: kotlin-connectors-service
+  namespace: digital-identity
+  labels:
+    app: kotlin-connectors
+spec:
+  ports:
+  - port: 8080
+    targetPort: 8080
+    name: http
+  selector:
+    app: kotlin-connectors
+  type: ClusterIP
+---
+# Python Fraud Detection Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-fraud
+  namespace: digital-identity
+  labels:
+    app: python-fraud
+    component: fraud-detection
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: python-fraud
+  template:
+    metadata:
+      labels:
+        app: python-fraud
+        component: fraud-detection
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: python-fraud
+        image: digital-identity/python-fraud:1.0.0
+        ports:
+        - containerPort: 8000
+          name: http
+        - containerPort: 8501
+          name: dashboard
+        - containerPort: 9091
+          name: metrics
+        env:
+        - name: PYTHONPATH
+          value: "/app"
+        - name: DATABASE_URL
+          value: "postgresql://$(POSTGRES_USER):$(POSTGRES_PASSWORD)@postgres-service:5432/digital_id"
+        - name: POSTGRES_USER
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-user
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: postgres-secret
+              key: postgres-password
+        - name: REDIS_URL
+          value: "redis://:$(REDIS_PASSWORD)@redis-service:6379"
+        - name: REDIS_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: redis-secret
+              key: redis-password
+        - name: KAFKA_BROKERS
+          value: "kafka-service:9092"
+        - name: MODEL_PATH
+          value: "/app/models"
+        - name: MLFLOW_TRACKING_URI
+          value: "http://mlflow-service:5000"
+        - name: PROMETHEUS_PORT
+          value: "9091"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /ready
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "2Gi"
+            cpu: "1000m"
+          limits:
+            memory: "4Gi"
+            cpu: "2000m"
+        volumeMounts:
+        - name: models-storage
+          mountPath: /app/models
+          readOnly: true
+      volumes:
+      - name: models-storage
+        persistentVolumeClaim:
+          claimName: fraud-models-pvc
+---
+# Python Fraud Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: python-fraud-service
+  namespace: digital-identity
+  labels:
+    app: python-fraud
+spec:
+  ports:
+  - port: 8000
+    targetPort: 8000
+    name: http
+  - port: 8501
+    targetPort: 8501
+    name: dashboard
+  - port: 9091
+    targetPort: 9091
+    name: metrics
+  selector:
+    app: python-fraud
+  type: ClusterIP
+---
+# Fraud Models PVC
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: fraud-models-pvc
+  namespace: digital-identity
+spec:
+  accessModes:
+    - ReadOnlyMany
+  storageClassName: fast-ssd
+  resources:
+    requests:
+      storage: 10Gi
+---
+# Next.js Citizen Portal Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextjs-citizen
+  namespace: digital-identity
+  labels:
+    app: nextjs-citizen
+    component: citizen-portal
+    version: "1.0.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: nextjs-citizen
+  template:
+    metadata:
+      labels:
+        app: nextjs-citizen
+        component: citizen-portal
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: nextjs-citizen
+        image: digital-identity/nextjs-citizen:1.0.0
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: NEXT_PUBLIC_API_URL
+          value: "https://api.digital-identity.gov.uk"
+        - name: NEXT_PUBLIC_WS_URL
+          value: "wss://api.digital-identity.gov.uk/ws"
+        - name: NEXTAUTH_URL
+          value: "https://portal.digital-identity.gov.uk"
+        - name: NEXTAUTH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: jwt-secret
+              key: nextauth-secret
+        - name: SENTRY_DSN
+          valueFrom:
+            secretKeyRef:
+              name: monitoring-secret
+              key: sentry-dsn
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1001
+---
+# Next.js Citizen Portal Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextjs-citizen-service
+  namespace: digital-identity
+  labels:
+    app: nextjs-citizen
+spec:
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: http
+  selector:
+    app: nextjs-citizen
+  type: ClusterIP
+---
+# Next.js Admin Dashboard Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nextjs-admin
+  namespace: digital-identity
+  labels:
+    app: nextjs-admin
+    component: admin-portal
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nextjs-admin
+  template:
+    metadata:
+      labels:
+        app: nextjs-admin
+        component: admin-portal
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: nextjs-admin
+        image: digital-identity/nextjs-admin:1.0.0
+        ports:
+        - containerPort: 3000
+          name: http
+        env:
+        - name: NODE_ENV
+          value: "production"
+        - name: NEXT_PUBLIC_API_URL
+          value: "https://admin-api.digital-identity.gov.uk"
+        - name: NEXTAUTH_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: jwt-secret
+              key: nextauth-secret
+        - name: ADMIN_JWT_SECRET
+          valueFrom:
+            secretKeyRef:
+              name: jwt-secret
+              key: admin-jwt-secret
+        livenessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 60
+          periodSeconds: 30
+          timeoutSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /api/health
+            port: 3000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          runAsUser: 1001
+---
+# Next.js Admin Portal Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: nextjs-admin-service
+  namespace: digital-identity
+  labels:
+    app: nextjs-admin
+spec:
+  ports:
+  - port: 3000
+    targetPort: 3000
+    name: http
+  selector:
+    app: nextjs-admin
+  type: ClusterIP
+---
+# Nginx Load Balancer Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx
+  namespace: digital-identity
+  labels:
+    app: nginx
+    component: load-balancer
+    version: "1.0.0"
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: nginx
+  template:
+    metadata:
+      labels:
+        app: nginx
+        component: load-balancer
+        version: "1.0.0"
+    spec:
+      containers:
+      - name: nginx
+        image: nginx:1.25-alpine
+        ports:
+        - containerPort: 80
+          name: http
+        - containerPort: 443
+          name: https
+        volumeMounts:
+        - name: nginx-config
+          mountPath: /etc/nginx/nginx.conf
+          subPath: nginx.conf
+        - name: nginx-api-config
+          mountPath: /etc/nginx/conf.d/api.conf
+          subPath: api.conf
+        - name: nginx-portal-config
+          mountPath: /etc/nginx/conf.d/portal.conf
+          subPath: portal.conf
+        - name: tls-secret
+          mountPath: /etc/nginx/ssl
+          readOnly: true
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 10
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 80
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+      volumes:
+      - name: nginx-config
+        configMap:
+          name: nginx-config
+      - name: nginx-api-config
+        configMap:
+          name: nginx-config
+      - name: nginx-portal-config
+        configMap:
+          name: nginx-config
+      - name: tls-secret
+        secret:
+          secretName: tls-secret
+---
+# Nginx Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: nginx-service
+  namespace: digital-identity
+  labels:
+    app: nginx
+spec:
+  ports:
+  - port: 80
+    targetPort: 80
+    name: http
+  - port: 443
+    targetPort: 443
+    name: https
+  selector:
+    app: nginx
+  type: LoadBalancer

@@ -1,0 +1,43 @@
+# Helm Chart for Digital Identity Platform
+apiVersion: v2
+name: digital-identity-platform
+description: A Helm chart for UK Digital Identity Platform
+type: application
+version: 1.0.0
+appVersion: "1.0.0"
+keywords:
+  - digital-identity
+  - government
+  - uk
+  - authentication
+  - verification
+home: https://digital-identity.gov.uk
+sources:
+  - https://github.com/uk-gov/digital-identity-platform
+maintainers:
+  - name: Digital Identity Team
+    email: digital-identity@digital.cabinet-office.gov.uk
+dependencies:
+  - name: postgresql
+    version: 12.12.10
+    repository: https://charts.bitnami.com/bitnami
+    condition: postgresql.enabled
+  - name: redis
+    version: 18.1.5
+    repository: https://charts.bitnami.com/bitnami
+    condition: redis.enabled
+  - name: kafka
+    version: 25.3.5
+    repository: https://charts.bitnami.com/bitnami
+    condition: kafka.enabled
+  - name: prometheus
+    version: 25.6.0
+    repository: https://prometheus-community.github.io/helm-charts
+    condition: monitoring.prometheus.enabled
+  - name: grafana
+    version: 7.0.8
+    repository: https://grafana.github.io/helm-charts
+    condition: monitoring.grafana.enabled
+annotations:
+  category: Government
+  licenses: Apache-2.0

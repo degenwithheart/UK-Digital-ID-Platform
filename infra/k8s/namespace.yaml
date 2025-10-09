@@ -1,0 +1,26 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: digital-identity
+  labels:
+    name: digital-identity
+    version: "1.0.0"
+    component: infrastructure
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: digital-identity-monitoring
+  labels:
+    name: digital-identity-monitoring
+    version: "1.0.0"
+    component: monitoring
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: digital-identity-system
+  labels:
+    name: digital-identity-system
+    version: "1.0.0"
+    component: system

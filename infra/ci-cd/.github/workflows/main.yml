@@ -1,0 +1,607 @@
+name: Digital Identity Platform CI/CD
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+  release:
+    types: [ published ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: digital-identity
+
+jobs:
+  # ============================================
+  # SECURITY AND QUALITY CHECKS
+  # ============================================
+  
+  security-scan:
+    name: Security Analysis
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      actions: read
+      contents: read
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Run Trivy vulnerability scanner
+      uses: aquasecurity/trivy-action@master
+      with:
+        scan-type: 'fs'
+        scan-ref: '.'
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+
+    - name: Upload Trivy scan results to GitHub Security tab
+      uses: github/codeql-action/upload-sarif@v2
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Run Semgrep
+      uses: returntocorp/semgrep-action@v1
+      with:
+        config: >- 
+          p/security-audit
+          p/secrets
+          p/owasp-top-ten
+
+  # ============================================
+  # RUST CORE ENGINE
+  # ============================================
+  
+  rust-core:
+    name: Rust Core Engine
+    runs-on: ubuntu-latest
+    needs: security-scan
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        profile: minimal
+        override: true
+        components: rustfmt, clippy
+
+    - name: Cache Rust dependencies
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.cargo/bin/
+          ~/.cargo/registry/index/
+          ~/.cargo/registry/cache/
+          ~/.cargo/git/db/
+          core-id-engine/target/
+        key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+    - name: Format check
+      working-directory: ./core-id-engine
+      run: cargo fmt --all -- --check
+
+    - name: Clippy
+      working-directory: ./core-id-engine
+      run: cargo clippy --all-targets --all-features -- -D warnings
+
+    - name: Run tests
+      working-directory: ./core-id-engine
+      run: cargo test --verbose
+
+    - name: Build
+      working-directory: ./core-id-engine
+      run: cargo build --release
+
+    - name: Build Docker image
+      run: |
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/rust-core:${{ github.sha }} ./core-id-engine
+        docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/rust-core:${{ github.sha }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/rust-core:latest
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Push Docker image
+      if: github.event_name != 'pull_request'
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/rust-core:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/rust-core:latest
+
+  # ============================================
+  # GO MICROSERVICES
+  # ============================================
+  
+  go-services:
+    name: Go Microservices
+    runs-on: ubuntu-latest
+    needs: security-scan
+    strategy:
+      matrix:
+        service: [gateway, credential, verification, registration, audit]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Go
+      uses: actions/setup-go@v4
+      with:
+        go-version: '1.21'
+
+    - name: Cache Go modules
+      uses: actions/cache@v3
+      with:
+        path: ~/go/pkg/mod
+        key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+        restore-keys: |
+          ${{ runner.os }}-go-
+
+    - name: Verify dependencies
+      working-directory: ./digital-id-services
+      run: go mod verify
+
+    - name: Format check
+      working-directory: ./digital-id-services
+      run: |
+        if [ "$(gofmt -s -l . | wc -l)" -gt 0 ]; then
+          gofmt -s -l .
+          exit 1
+        fi
+
+    - name: Vet
+      working-directory: ./digital-id-services
+      run: go vet ./...
+
+    - name: Run staticcheck
+      uses: dominikh/staticcheck-action@v1.3.0
+      with:
+        version: "2023.1.6"
+        install-go: false
+        working-directory: ./digital-id-services
+
+    - name: Run tests
+      working-directory: ./digital-id-services
+      run: go test -race -coverprofile=coverage.out -covermode=atomic ./...
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./digital-id-services/coverage.out
+
+    - name: Build service
+      working-directory: ./digital-id-services/${{ matrix.service }}
+      run: go build -v .
+
+    - name: Build Docker image
+      run: |
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/go-${{ matrix.service }}:${{ github.sha }} ./digital-id-services/${{ matrix.service }}
+        docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/go-${{ matrix.service }}:${{ github.sha }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/go-${{ matrix.service }}:latest
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Push Docker image
+      if: github.event_name != 'pull_request'
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/go-${{ matrix.service }}:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/go-${{ matrix.service }}:latest
+
+  # ============================================
+  # KOTLIN GOVERNMENT CONNECTORS
+  # ============================================
+  
+  kotlin-connectors:
+    name: Kotlin Government Connectors
+    runs-on: ubuntu-latest
+    needs: security-scan
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup JDK 17
+      uses: actions/setup-java@v3
+      with:
+        java-version: '17'
+        distribution: 'temurin'
+
+    - name: Cache Gradle packages
+      uses: actions/cache@v3
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Grant execute permission for gradlew
+      working-directory: ./gov-connectors
+      run: chmod +x gradlew
+
+    - name: Run tests
+      working-directory: ./gov-connectors
+      run: ./gradlew test
+
+    - name: Run ktlint
+      working-directory: ./gov-connectors
+      run: ./gradlew ktlintCheck
+
+    - name: Run detekt
+      working-directory: ./gov-connectors
+      run: ./gradlew detekt
+
+    - name: Build
+      working-directory: ./gov-connectors
+      run: ./gradlew build
+
+    - name: Build Docker image
+      run: |
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/kotlin-connectors:${{ github.sha }} ./gov-connectors
+        docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/kotlin-connectors:${{ github.sha }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/kotlin-connectors:latest
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Push Docker image
+      if: github.event_name != 'pull_request'
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/kotlin-connectors:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/kotlin-connectors:latest
+
+  # ============================================
+  # PYTHON FRAUD DETECTION
+  # ============================================
+  
+  python-fraud:
+    name: Python Fraud Detection
+    runs-on: ubuntu-latest
+    needs: security-scan
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Cache pip packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    - name: Install dependencies
+      working-directory: ./fraud-analytics
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-cov black flake8 mypy
+
+    - name: Format check with Black
+      working-directory: ./fraud-analytics
+      run: black --check .
+
+    - name: Lint with flake8
+      working-directory: ./fraud-analytics
+      run: flake8 . --count --select=E9,F63,F7,F82 --show-source --statistics
+
+    - name: Type check with mypy
+      working-directory: ./fraud-analytics
+      run: mypy . --ignore-missing-imports
+
+    - name: Run tests
+      working-directory: ./fraud-analytics
+      run: pytest --cov=. --cov-report=xml
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./fraud-analytics/coverage.xml
+
+    - name: Build Docker image
+      run: |
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/python-fraud:${{ github.sha }} ./fraud-analytics
+        docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/python-fraud:${{ github.sha }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/python-fraud:latest
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Push Docker image
+      if: github.event_name != 'pull_request'
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/python-fraud:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/python-fraud:latest
+
+  # ============================================
+  # FLUTTER MOBILE APP
+  # ============================================
+  
+  flutter-app:
+    name: Flutter Mobile App
+    runs-on: ubuntu-latest
+    needs: security-scan
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Flutter
+      uses: subosito/flutter-action@v2
+      with:
+        flutter-version: '3.16.0'
+        channel: 'stable'
+
+    - name: Get dependencies
+      working-directory: ./mobile-wallet
+      run: flutter pub get
+
+    - name: Verify formatting
+      working-directory: ./mobile-wallet
+      run: dart format --output=none --set-exit-if-changed .
+
+    - name: Analyze project source
+      working-directory: ./mobile-wallet
+      run: dart analyze --fatal-infos
+
+    - name: Run tests
+      working-directory: ./mobile-wallet
+      run: flutter test --coverage
+
+    - name: Upload coverage to Codecov
+      uses: codecov/codecov-action@v3
+      with:
+        file: ./mobile-wallet/coverage/lcov.info
+
+    - name: Build APK
+      working-directory: ./mobile-wallet
+      run: flutter build apk --release
+
+    - name: Build iOS (if on macOS)
+      if: runner.os == 'macOS'
+      working-directory: ./mobile-wallet
+      run: flutter build ios --release --no-codesign
+
+    - name: Upload APK artifact
+      uses: actions/upload-artifact@v3
+      with:
+        name: mobile-app-apk
+        path: mobile-wallet/build/app/outputs/flutter-apk/app-release.apk
+
+  # ============================================
+  # REACT WEB PORTALS
+  # ============================================
+  
+  web-portals:
+    name: React Web Portals
+    runs-on: ubuntu-latest
+    needs: security-scan
+    strategy:
+      matrix:
+        portal: [citizen-portal, admin-dashboard]
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+        cache: 'npm'
+        cache-dependency-path: web-portal/${{ matrix.portal }}/package-lock.json
+
+    - name: Install dependencies
+      working-directory: ./web-portal/${{ matrix.portal }}
+      run: npm ci
+
+    - name: Lint
+      working-directory: ./web-portal/${{ matrix.portal }}
+      run: npm run lint
+
+    - name: Type check
+      working-directory: ./web-portal/${{ matrix.portal }}
+      run: npm run type-check
+
+    - name: Run tests
+      working-directory: ./web-portal/${{ matrix.portal }}
+      run: npm run test:ci
+
+    - name: Build
+      working-directory: ./web-portal/${{ matrix.portal }}
+      run: npm run build
+      env:
+        NEXT_PUBLIC_API_URL: https://api.digital-identity.gov.uk
+
+    - name: Build Docker image
+      run: |
+        docker build -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/nextjs-${{ matrix.portal }}:${{ github.sha }} ./web-portal/${{ matrix.portal }}
+        docker tag ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/nextjs-${{ matrix.portal }}:${{ github.sha }} ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/nextjs-${{ matrix.portal }}:latest
+
+    - name: Log in to Container Registry
+      if: github.event_name != 'pull_request'
+      uses: docker/login-action@v2
+      with:
+        registry: ${{ env.REGISTRY }}
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    - name: Push Docker image
+      if: github.event_name != 'pull_request'
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/nextjs-${{ matrix.portal }}:${{ github.sha }}
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/nextjs-${{ matrix.portal }}:latest
+
+  # ============================================
+  # INFRASTRUCTURE DEPLOYMENT
+  # ============================================
+  
+  deploy-staging:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    needs: [rust-core, go-services, kotlin-connectors, python-fraud, web-portals]
+    if: github.ref == 'refs/heads/develop'
+    environment: staging
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Setup Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: '3.13.0'
+
+    - name: Configure kubectl for staging
+      run: |
+        echo "${{ secrets.KUBECONFIG_STAGING }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+
+    - name: Deploy to staging
+      run: |
+        export KUBECONFIG=kubeconfig
+        kubectl apply -f infra/k8s/namespace.yaml
+        kubectl apply -f infra/k8s/secrets.yaml
+        kubectl apply -f infra/k8s/configmaps.yaml
+        kubectl apply -f infra/k8s/data-services.yaml
+        kubectl apply -f infra/k8s/core-services.yaml
+        kubectl apply -f infra/k8s/app-services.yaml
+        kubectl apply -f infra/k8s/monitoring-services.yaml
+        kubectl apply -f infra/k8s/scaling-policies.yaml
+        
+        # Update image tags
+        kubectl set image deployment/rust-core rust-core=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/rust-core:${{ github.sha }} -n digital-identity
+        kubectl set image deployment/go-gateway go-gateway=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/go-gateway:${{ github.sha }} -n digital-identity
+        kubectl set image deployment/kotlin-connectors kotlin-connectors=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/kotlin-connectors:${{ github.sha }} -n digital-identity
+        kubectl set image deployment/python-fraud python-fraud=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/python-fraud:${{ github.sha }} -n digital-identity
+        kubectl set image deployment/nextjs-citizen nextjs-citizen=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/nextjs-citizen-portal:${{ github.sha }} -n digital-identity
+        kubectl set image deployment/nextjs-admin nextjs-admin=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/nextjs-admin-dashboard:${{ github.sha }} -n digital-identity
+        
+        # Wait for rollout
+        kubectl rollout status deployment/rust-core -n digital-identity
+        kubectl rollout status deployment/go-gateway -n digital-identity
+        kubectl rollout status deployment/kotlin-connectors -n digital-identity
+
+    - name: Run integration tests
+      run: |
+        export KUBECONFIG=kubeconfig
+        # Wait for services to be ready
+        kubectl wait --for=condition=ready pod -l app=rust-core -n digital-identity --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=go-gateway -n digital-identity --timeout=300s
+        
+        # Run basic health checks
+        kubectl port-forward service/nginx-service 8080:80 -n digital-identity &
+        sleep 10
+        curl -f http://localhost:8080/health || exit 1
+
+  deploy-production:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    needs: [rust-core, go-services, kotlin-connectors, python-fraud, web-portals]
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup kubectl
+      uses: azure/setup-kubectl@v3
+      with:
+        version: 'v1.28.0'
+
+    - name: Setup Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: '3.13.0'
+
+    - name: Configure kubectl for production
+      run: |
+        echo "${{ secrets.KUBECONFIG_PRODUCTION }}" | base64 -d > kubeconfig
+        export KUBECONFIG=kubeconfig
+
+    - name: Deploy to production
+      run: |
+        export KUBECONFIG=kubeconfig
+        
+        # Apply configurations
+        kubectl apply -f infra/k8s/namespace.yaml
+        kubectl apply -f infra/k8s/secrets.yaml
+        kubectl apply -f infra/k8s/configmaps.yaml
+        kubectl apply -f infra/k8s/data-services.yaml
+        kubectl apply -f infra/k8s/core-services.yaml
+        kubectl apply -f infra/k8s/app-services.yaml
+        kubectl apply -f infra/k8s/monitoring-services.yaml
+        kubectl apply -f infra/k8s/scaling-policies.yaml
+        
+        # Rolling update with image tags
+        kubectl set image deployment/rust-core rust-core=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/rust-core:${{ github.sha }} -n digital-identity
+        kubectl set image deployment/go-gateway go-gateway=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/go-gateway:${{ github.sha }} -n digital-identity
+        kubectl set image deployment/kotlin-connectors kotlin-connectors=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/kotlin-connectors:${{ github.sha }} -n digital-identity
+        kubectl set image deployment/python-fraud python-fraud=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/python-fraud:${{ github.sha }} -n digital-identity
+        kubectl set image deployment/nextjs-citizen nextjs-citizen=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/nextjs-citizen-portal:${{ github.sha }} -n digital-identity
+        kubectl set image deployment/nextjs-admin nextjs-admin=${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}/nextjs-admin-dashboard:${{ github.sha }} -n digital-identity
+        
+        # Verify deployment
+        kubectl rollout status deployment/rust-core -n digital-identity --timeout=600s
+        kubectl rollout status deployment/go-gateway -n digital-identity --timeout=600s
+        kubectl rollout status deployment/kotlin-connectors -n digital-identity --timeout=600s
+
+    - name: Production health check
+      run: |
+        export KUBECONFIG=kubeconfig
+        # Verify all services are healthy
+        kubectl wait --for=condition=ready pod -l app=rust-core -n digital-identity --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=go-gateway -n digital-identity --timeout=300s
+        kubectl wait --for=condition=ready pod -l app=kotlin-connectors -n digital-identity --timeout=300s
+        
+        # Test external endpoints
+        curl -f https://api.digital-identity.gov.uk/health || exit 1
+        curl -f https://portal.digital-identity.gov.uk/health || exit 1
+
+    - name: Notify deployment
+      uses: 8398a7/action-slack@v3
+      with:
+        status: ${{ job.status }}
+        channel: '#deployments'
+        text: "Production deployment completed for Digital Identity Platform"
+      env:
+        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      if: always()

@@ -1,0 +1,168 @@
+# Fraud Detection System Configuration
+
+# Database Configuration
+database:
+  host: localhost
+  port: 5432
+  database: fraud_detection
+  user: postgres
+  password: password
+  max_connections: 20
+  connection_timeout: 30
+
+# Redis Configuration  
+redis:
+  host: localhost
+  port: 6379
+  db: 0
+  password: null
+  max_connections: 10
+
+# Kafka Configuration
+kafka:
+  bootstrap_servers:
+    - localhost:9092
+  consumer_group: fraud-detection-v1
+  topics:
+    - audit-events
+    - user-activities
+    - transactions
+    - identity-verifications
+    - document-uploads
+  batch_size: 100
+  poll_timeout_ms: 1000
+
+# Model Configuration
+models:
+  ensemble_weights:
+    xgboost: 0.30
+    lightgbm: 0.25
+    catboost: 0.20
+    neural_network: 0.15
+    isolation_forest: 0.10
+  
+  # Model retraining parameters
+  retrain_threshold: 0.05  # Retrain if performance drops by 5%
+  min_samples_retrain: 1000
+  retrain_frequency_hours: 24
+  validation_split: 0.2
+  
+  # Feature selection
+  max_features: 100
+  feature_selection_method: "selectkbest"  # or "pca", "rfe"
+  
+  # Cross-validation
+  cv_folds: 5
+  random_state: 42
+
+# Risk Thresholds
+thresholds:
+  low_risk: 0.3
+  medium_risk: 0.6
+  high_risk: 0.8
+  critical_risk: 0.95
+  
+  # Action thresholds
+  block_threshold: 0.9
+  review_threshold: 0.7
+  monitor_threshold: 0.5
+
+# Feature Engineering Configuration
+features:
+  time_window_hours: 24
+  behavioral_lookback_days: 30
+  graph_analysis_depth: 3
+  velocity_window_minutes: 60
+  
+  # IP Analysis
+  ip_geolocation_enabled: true
+  ip_reputation_check: true
+  
+  # Device Analysis
+  device_fingerprinting: true
+  browser_analysis: true
+  
+  # Behavioral Analysis
+  activity_patterns: true
+  location_analysis: true
+  time_patterns: true
+
+# Alert Configuration
+alerts:
+  enable_email: true
+  enable_slack: false
+  enable_webhook: true
+  enable_sms: false
+  
+  # Processing
+  batch_size: 100
+  delay_seconds: 300  # 5 minutes
+  max_queue_size: 10000
+  
+  # Notification settings
+  email_recipients:
+    - fraud-team@company.com
+    - security@company.com
+  
+  webhook_urls:
+    - https://hooks.slack.com/fraud-alerts
+    - https://security.company.com/webhook/fraud
+  
+  # Rate limiting
+  max_alerts_per_hour: 1000
+  duplicate_suppression_minutes: 30
+
+# Security Configuration
+security:
+  encryption_key_path: /etc/fraud-detection/keys/encryption.key
+  jwt_secret_key: your-jwt-secret-key
+  api_rate_limit: 1000  # requests per hour
+  
+  # Data retention
+  alert_retention_days: 365
+  event_retention_days: 90
+  model_retention_days: 30
+
+# Performance Configuration
+performance:
+  max_workers: 4
+  batch_processing_size: 1000
+  cache_ttl_seconds: 3600
+  
+  # Memory management
+  max_memory_usage_gb: 8
+  gc_threshold: 0.8
+
+# Logging Configuration
+logging:
+  level: INFO
+  format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+  file_path: /var/log/fraud-detection/fraud_detection.log
+  max_file_size_mb: 100
+  backup_count: 5
+  
+  # Structured logging
+  json_logging: false
+  include_stack_trace: true
+
+# Monitoring Configuration
+monitoring:
+  metrics_enabled: true
+  prometheus_port: 8080
+  health_check_interval_seconds: 30
+  
+  # Performance monitoring
+  track_inference_time: true
+  track_memory_usage: true
+  track_model_performance: true
+
+# Development Configuration
+development:
+  debug_mode: false
+  profile_performance: false
+  mock_external_services: false
+  test_mode: false
+  
+  # Sample data
+  generate_synthetic_data: true
+  synthetic_data_size: 10000

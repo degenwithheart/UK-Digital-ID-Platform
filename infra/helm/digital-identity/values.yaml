@@ -1,0 +1,542 @@
+# Global configuration
+global:
+  imageRegistry: "ghcr.io"
+  imageRepository: "uk-gov/digital-identity"
+  imageTag: "1.0.0"
+  imagePullPolicy: Always
+  storageClass: "fast-ssd"
+  
+# Environment configuration
+environment: production
+
+# Ingress configuration
+ingress:
+  enabled: true
+  className: "nginx"
+  annotations:
+    cert-manager.io/cluster-issuer: "letsencrypt-prod"
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/force-ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/rate-limit: "100"
+  hosts:
+    api:
+      host: api.digital-identity.gov.uk
+      paths:
+        - path: /
+          pathType: Prefix
+    portal:
+      host: portal.digital-identity.gov.uk
+      paths:
+        - path: /
+          pathType: Prefix
+    admin:
+      host: admin.digital-identity.gov.uk
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: digital-identity-tls
+      hosts:
+        - api.digital-identity.gov.uk
+        - portal.digital-identity.gov.uk
+        - admin.digital-identity.gov.uk
+
+# Service configuration
+services:
+  # Rust Core Engine
+  rustCore:
+    enabled: true
+    replicaCount: 3
+    image:
+      repository: rust-core
+      tag: ""
+    service:
+      type: ClusterIP
+      port: 3000
+      metricsPort: 9090
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "1000m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+    env:
+      RUST_LOG: "info"
+      RUST_ENV: "production"
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+      targetMemoryUtilizationPercentage: 80
+
+  # Go Gateway
+  goGateway:
+    enabled: true
+    replicaCount: 3
+    image:
+      repository: go-gateway
+      tag: ""
+    service:
+      type: ClusterIP
+      port: 8080
+      httpsPort: 8443
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "1.5Gi"
+        cpu: "1500m"
+    env:
+      GIN_MODE: "release"
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 15
+      targetCPUUtilizationPercentage: 70
+
+  # Go Microservices
+  goAuth:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: go-auth
+      tag: ""
+    service:
+      type: ClusterIP
+      port: 8080
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+  goVerification:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: go-verification
+      tag: ""
+    service:
+      type: ClusterIP
+      port: 8080
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+  goRegistration:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: go-registration
+      tag: ""
+    service:
+      type: ClusterIP
+      port: 8080
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+  goAudit:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: go-audit
+      tag: ""
+    service:
+      type: ClusterIP
+      port: 8080
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+  # Kotlin Government Connectors
+  kotlinConnectors:
+    enabled: true
+    replicaCount: 3
+    image:
+      repository: kotlin-connectors
+      tag: ""
+    service:
+      type: ClusterIP
+      port: 8080
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+    env:
+      SPRING_PROFILES_ACTIVE: "production"
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 10
+      targetCPUUtilizationPercentage: 70
+
+  # Python Fraud Detection
+  pythonFraud:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: python-fraud
+      tag: ""
+    service:
+      type: ClusterIP
+      port: 8000
+      dashboardPort: 8501
+      metricsPort: 9091
+    resources:
+      requests:
+        memory: "2Gi"
+        cpu: "1000m"
+      limits:
+        memory: "4Gi"
+        cpu: "2000m"
+    env:
+      PYTHONPATH: "/app"
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 8
+      targetCPUUtilizationPercentage: 75
+
+  # Next.js Portals
+  nextjsCitizen:
+    enabled: true
+    replicaCount: 3
+    image:
+      repository: nextjs-citizen
+      tag: ""
+    service:
+      type: ClusterIP
+      port: 3000
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    env:
+      NODE_ENV: "production"
+    autoscaling:
+      enabled: true
+      minReplicas: 3
+      maxReplicas: 12
+      targetCPUUtilizationPercentage: 70
+
+  nextjsAdmin:
+    enabled: true
+    replicaCount: 2
+    image:
+      repository: nextjs-admin
+      tag: ""
+    service:
+      type: ClusterIP
+      port: 3000
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    env:
+      NODE_ENV: "production"
+    autoscaling:
+      enabled: true
+      minReplicas: 2
+      maxReplicas: 6
+      targetCPUUtilizationPercentage: 70
+
+# Database configuration
+postgresql:
+  enabled: true
+  auth:
+    postgresPassword: ""
+    username: "user"
+    password: ""
+    database: "digital_id"
+  primary:
+    persistence:
+      enabled: true
+      size: 50Gi
+      storageClass: "fast-ssd"
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "2000m"
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+# Redis configuration
+redis:
+  enabled: true
+  auth:
+    enabled: true
+    password: ""
+  master:
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: "fast-ssd"
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+  metrics:
+    enabled: true
+    serviceMonitor:
+      enabled: true
+
+# Kafka configuration
+kafka:
+  enabled: true
+  persistence:
+    enabled: true
+    size: 20Gi
+    storageClass: "fast-ssd"
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "500m"
+    limits:
+      memory: "2Gi"
+      cpu: "2000m"
+  zookeeper:
+    persistence:
+      enabled: true
+      size: 5Gi
+      storageClass: "standard"
+  metrics:
+    kafka:
+      enabled: true
+    jmx:
+      enabled: true
+
+# Vault configuration
+vault:
+  enabled: true
+  server:
+    dev:
+      enabled: false
+    standalone:
+      enabled: true
+      config: |
+        ui = true
+        listener "tcp" {
+          tls_disable = 1
+          address = "[::]:8200"
+          cluster_address = "[::]:8201"
+        }
+        storage "file" {
+          path = "/vault/data"
+        }
+    resources:
+      requests:
+        memory: "256Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    dataStorage:
+      enabled: true
+      size: 10Gi
+      storageClass: "standard"
+
+# Monitoring configuration
+monitoring:
+  prometheus:
+    enabled: true
+    server:
+      persistentVolume:
+        enabled: true
+        size: 50Gi
+        storageClass: "fast-ssd"
+      resources:
+        requests:
+          memory: "1Gi"
+          cpu: "500m"
+        limits:
+          memory: "2Gi"
+          cpu: "1000m"
+    alertmanager:
+      enabled: true
+      persistentVolume:
+        enabled: true
+        size: 2Gi
+  
+  grafana:
+    enabled: true
+    persistence:
+      enabled: true
+      size: 10Gi
+      storageClass: "standard"
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+    adminPassword: ""
+    sidecar:
+      dashboards:
+        enabled: true
+        searchNamespace: ALL
+      datasources:
+        enabled: true
+
+# Logging configuration
+logging:
+  elasticsearch:
+    enabled: true
+    master:
+      replicaCount: 1
+      persistence:
+        enabled: true
+        size: 50Gi
+        storageClass: "fast-ssd"
+      resources:
+        requests:
+          memory: "2Gi"
+          cpu: "1000m"
+        limits:
+          memory: "4Gi"
+          cpu: "2000m"
+  
+  kibana:
+    enabled: true
+    resources:
+      requests:
+        memory: "1Gi"
+        cpu: "500m"
+      limits:
+        memory: "2Gi"
+        cpu: "1000m"
+
+# Distributed Tracing
+jaeger:
+  enabled: true
+  storage:
+    type: elasticsearch
+    elasticsearch:
+      host: elasticsearch-service
+      port: 9200
+  collector:
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "250m"
+      limits:
+        memory: "1Gi"
+        cpu: "1000m"
+
+# MLOps configuration
+mlflow:
+  enabled: true
+  backend:
+    databaseUri: "postgresql://user:password@postgresql:5432/mlflow"
+  artifacts:
+    persistence:
+      enabled: true
+      size: 20Gi
+      storageClass: "standard"
+  resources:
+    requests:
+      memory: "512Mi"
+      cpu: "250m"
+    limits:
+      memory: "1Gi"
+      cpu: "1000m"
+
+# Load Balancer configuration
+nginx:
+  enabled: true
+  replicaCount: 2
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "250m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+  service:
+    type: LoadBalancer
+
+# Security configuration
+security:
+  podSecurityPolicy:
+    enabled: true
+  networkPolicy:
+    enabled: true
+  rbac:
+    create: true
+  serviceAccount:
+    create: true
+
+# Pod Disruption Budgets
+podDisruptionBudgets:
+  enabled: true
+  minAvailable: 2
+
+# Resource Quotas
+resourceQuotas:
+  enabled: true
+  requests:
+    cpu: "20"
+    memory: "40Gi"
+  limits:
+    cpu: "50"
+    memory: "100Gi"
+
+# Secrets (will be overridden by environment-specific values)
+secrets:
+  postgresql:
+    password: "defaultpassword"
+  redis:
+    password: "defaultredispassword"
+  jwt:
+    secret: "supersecretjwtkey"
+    nextauthSecret: "nextauthsupersecret"
+    adminSecret: "adminjwtsecretkey"
+  apiKeys:
+    hmrc: "hmrcapikey"
+    nhs: "nhsapikey"
+    dvla: "dvlaapikey"
+    dwp: "dwpapikey"
+    companiesHouse: "companieshouseapikey"
+  monitoring:
+    grafanaPassword: "admin"
+    sentryDsn: "sentrydsn"
+  vault:
+    rootToken: "vaultroottoken"
+  aws:
+    accessKeyId: "awsaccesskey"
+    secretAccessKey: "awssecretaccesskey"

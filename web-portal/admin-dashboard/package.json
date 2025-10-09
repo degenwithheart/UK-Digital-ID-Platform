@@ -1,0 +1,45 @@
+{
+  "name": "digital-id-admin-dashboard",
+  "version": "1.0.0",
+  "description": "Admin Dashboard for UK Digital Identity Platform",
+  "main": "index.js",
+  "scripts": {
+    "dev": "next dev -p 3001",
+    "build": "next build",
+    "start": "next start -p 3001",
+    "lint": "next lint",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@emotion/react": "^11.11.1",
+    "@emotion/styled": "^11.11.0",
+    "@mui/icons-material": "^5.15.3",
+    "@mui/material": "^5.15.3",
+    "@mui/lab": "^5.0.0-alpha.158",
+    "@mui/x-data-grid": "^6.18.5",
+    "@mui/x-charts": "^6.18.5",
+    "@reduxjs/toolkit": "^2.0.1",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-redux": "^9.0.4",
+    "next": "^14.0.4",
+    "typescript": "^5.3.3",
+    "axios": "^1.6.2",
+    "jwt-decode": "^4.0.0",
+    "recharts": "^2.8.0",
+    "date-fns": "^2.30.0",
+    "lodash": "^4.17.21",
+    "react-hook-form": "^7.48.2",
+    "yup": "^1.4.0",
+    "@hookform/resolvers": "^3.3.2"
+  },
+  "devDependencies": {
+    "@types/node": "^20.10.5",
+    "@types/react": "^18.2.45",
+    "@types/react-dom": "^18.2.18",
+    "@types/jsonwebtoken": "^9.0.5",
+    "@types/lodash": "^4.14.202",
+    "eslint": "^8.56.0",
+    "eslint-config-next": "^14.0.4"
+  }
+}
