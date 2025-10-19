@@ -694,6 +694,229 @@ spec:
         averageValue: "1000"
 ```
 
+#### Advanced HPA with Custom Metrics
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fraud-analytics-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fraud-analytics
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: External
+    external:
+      metric:
+        name: kafka_queue_length
+        selector:
+          matchLabels:
+            topic: fraud-detection
+      target:
+        type: Value
+        value: "100"
+  - type: External
+    external:
+      metric:
+        name: sync_event_backlog
+        selector:
+          matchLabels:
+            service: fraud-analytics
+      target:
+        type: Value
+        value: "50"
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 100
+        periodSeconds: 60
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 20
+        periodSeconds: 60
+```
+
+### Network Policies Management
+
+#### Production Network Security
+```yaml
+# infra/k8s/network-policies.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sync-service-policy
+  namespace: digital-identity
+spec:
+  podSelector:
+    matchLabels:
+      component: sync-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: api-gateway
+    ports:
+    - protocol: TCP
+      port: 8080
+  - from:
+    - podSelector:
+        matchLabels:
+          app: core-engine
+    ports:
+    - protocol: TCP
+      port: 3000
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: kafka
+    ports:
+    - protocol: TCP
+      port: 9092
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+```
+
+#### Sync Traffic Monitoring
+```bash
+#!/bin/bash
+# Network policy monitoring script
+
+NAMESPACE="digital-identity"
+OUTPUT_FILE="/var/log/network-policy-audit.log"
+
+echo "$(date): Starting network policy audit" >> "$OUTPUT_FILE"
+
+# Check network policy violations
+kubectl get events -n "$NAMESPACE" --field-selector reason=NetworkPolicy -o json | \
+jq -r '.items[] | select(.type=="Warning") | "\(.lastTimestamp): \(.message)"' >> "$OUTPUT_FILE"
+
+# Monitor sync traffic patterns
+kubectl exec -it redis-primary -- redis-cli --eval /scripts/traffic-monitor.lua >> "$OUTPUT_FILE"
+
+# Check for unauthorized connections
+kubectl logs -n "$NAMESPACE" -l app=network-policy-controller --tail=100 | \
+grep -i "denied\|blocked\|violation" >> "$OUTPUT_FILE"
+
+echo "$(date): Network policy audit completed" >> "$OUTPUT_FILE"
+```
+
+## 🔄 Sync System Operations
+
+### Sync Health Monitoring
+```yaml
+# Sync-specific Prometheus alerts
+groups:
+- name: sync-system-alerts
+  rules:
+  - alert: SyncServiceDown
+    expr: up{job="sync-service"} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Sync service is down"
+      description: "Real-time synchronization service is not responding"
+  
+  - alert: HighSyncLatency
+    expr: histogram_quantile(0.95, rate(sync_request_duration_seconds_bucket[5m])) > 1
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High sync request latency"
+      description: "95th percentile sync latency above 1 second"
+  
+  - alert: SyncEventBacklog
+    expr: redis_queue_length{queue="sync-events"} > 1000
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Sync event queue backlog"
+      description: "More than 1000 sync events queued"
+  
+  - alert: GovernmentFeedDisconnect
+    expr: up{job="government-feed-connector"} == 0
+    for: 10m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Government feed disconnected"
+      description: "Government data feed synchronization lost"
+```
+
+### Sync Performance Optimization
+```bash
+#!/bin/bash
+# Sync performance monitoring script
+
+# Monitor Redis pub/sub performance
+kubectl exec -it redis-primary -- redis-cli info pubsub | \
+grep -E "(channels|patterns|clients)" > /tmp/redis-pubsub-stats.txt
+
+# Check Kafka sync topic throughput
+kubectl exec -it kafka-broker -- kafka-run-class.sh \
+    kafka.tools.GetOffsetShell \
+    --broker-list localhost:9092 \
+    --topic sync-events \
+    --time -1 > /tmp/kafka-sync-offsets.txt
+
+# Monitor WebSocket connection health
+curl -s "http://prometheus:9090/api/v1/query?query=websocket_active_connections" | \
+jq '.data.result[0].value[1]' > /tmp/websocket-connections.txt
+
+# Generate sync performance report
+cat > /tmp/sync-performance-report.txt << EOF
+=== Sync Performance Report $(date) ===
+
+Redis Pub/Sub Stats:
+$(cat /tmp/redis-pubsub-stats.txt)
+
+Kafka Sync Throughput:
+$(cat /tmp/kafka-sync-offsets.txt)
+
+Active WebSocket Connections:
+$(cat /tmp/websocket-connections.txt)
+
+Recommendations:
+$(if [ $(cat /tmp/websocket-connections.txt) -gt 10000 ]; then
+    echo "- Consider scaling WebSocket service"
+  fi)
+$(if [ $(grep "channels:" /tmp/redis-pubsub-stats.txt | cut -d: -f2) -gt 1000 ]; then
+    echo "- High number of pub/sub channels, monitor memory usage"
+  fi)
+EOF
+
+# Send report to operations team
+mail -s "Daily Sync Performance Report" ops@digital-identity.gov.uk < /tmp/sync-performance-report.txt
+```
+
+## 🚨 Troubleshooting Guide
+```
+
 #### Vertical Pod Autoscaler (VPA) Configuration
 ```yaml
 apiVersion: autoscaling.k8s.io/v1

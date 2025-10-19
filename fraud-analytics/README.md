@@ -7,6 +7,8 @@ Comprehensive AI-powered fraud detection system for the UK Digital Identity Plat
 ### Enterprise ML Stack
 - **Advanced Algorithms**: XGBoost, LightGBM, CatBoost ensemble with TensorFlow/PyTorch deep learning
 - **Real-time Processing**: Kafka consumer with Redis caching and PostgreSQL audit logging
+- **Event-Driven Sync**: Redis pub/sub integration for cross-system fraud pattern synchronization
+- **Privacy Protection**: Differential privacy algorithms for sensitive data analysis
 - **Deep Learning**: LSTM networks for sequence analysis, Transformers for document processing
 - **Production ML**: A/B testing framework, automated model training, hyperparameter optimization
 
@@ -36,11 +38,17 @@ Comprehensive AI-powered fraud detection system for the UK Digital Identity Plat
 │ Kafka Topics    │───▶│ Python Consumer  │───▶│ XGBoost Model   │
 │ (audit-logs)    │    │ (Fraud Engine)   │    │ (Classification)│
 └─────────────────┘    └──────────────────┘    └─────────────────┘
-         ▲                        │
-         │                        ▼
-┌─────────────────┐    ┌──────────────────┐
-│ Go Gateway      │    │ Fraud Alerts     │
-│ (Audit Events)  │    │ (Notifications)  │
+         ▲                        │                    │
+         │                        ▼                    │
+┌─────────────────┐    ┌──────────────────┐            │
+│ Go Gateway      │    │ Fraud Alerts     │            │
+│ (Audit Events)  │    │ (Notifications)  │            │
+└─────────────────┘    └──────────────────┘            │
+         ▲                                             │
+         │                                             │
+┌─────────────────┐    ┌──────────────────┐            │
+│ Redis Pub/Sub   │───▶│ Event Sync       │────────────┘
+│ (Cross-System)  │    │ Thread           │
 └─────────────────┘    └──────────────────┘
 ```
 
@@ -77,6 +85,14 @@ model = xgb.XGBClassifier(
 - Credential usage patterns
 - Login attempt sequences
 
+## 🔄 Sync Capabilities
+
+- **Redis Pub/Sub Integration**: Real-time event-driven synchronization with other platform services
+- **Cross-System Fraud Patterns**: Subscribe to identity verification events for enhanced detection
+- **Event Subscription Thread**: Background processing of sync events without blocking ML inference
+- **Bidirectional Communication**: Publish fraud alerts and subscribe to system-wide events
+- **Differential Privacy**: Privacy-preserving algorithms for collaborative fraud detection
+
 ## Real-time Processing
 
 ### Kafka Consumer
@@ -101,9 +117,10 @@ def detect_fraud_live(model, audit_event):
 ## Performance Optimizations
 
 - **Parallel Training**: Multi-core CPU utilization with n_jobs=-1
+- **Concurrent Processing**: ThreadPoolExecutor + ProcessPoolExecutor for parallel ML inference and event handling
 - **Batch Processing**: Process multiple events simultaneously
 - **Model Caching**: In-memory model storage for fast inference
-- **Async Processing**: Non-blocking Kafka message consumption
+- **Async Processing**: Non-blocking Kafka message consumption and event subscription
 - **Feature Caching**: Reuse computed features across predictions
 
 ## Data Flow

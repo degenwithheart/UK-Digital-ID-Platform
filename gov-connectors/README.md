@@ -6,34 +6,37 @@ Comprehensive Spring Boot 3.1.0 service providing secure integrations with 25 UK
 
 - **Spring Boot 3.1.0**: WebFlux reactive streams with non-blocking I/O and virtual threads
 - **25 Government Systems**: Complete integration suite covering all major UK government departments
-- **Resilience Patterns**: Spring Retry with exponential backoff, Hystrix circuit breakers, response caching
-- **Security First**: OAuth 2.1, mTLS, comprehensive audit logging, input validation
-- **Performance**: Connection pooling, reactive streams, parallel processing, 5s timeout handling
+- **Event-Driven Sync**: Redis pub/sub integration for real-time government feed synchronization
+- **Privacy & Security**: AES-GCM encryption, OAuth 2.1, mTLS, comprehensive audit logging, input validation
+- **Performance**: Connection pooling, reactive streams, parallel processing, TTL caching, 5s timeout handling
 - **Enterprise**: JPA persistence, SLF4J structured logging, Prometheus metrics integration
 
 ## 🏗️ Architecture
 
 ```
-┌─────────────────┐    ┌──────────────────────┐    
-│ Core Engine     │───▶│  Unified Government  │    
-│ Verification    │    │  Connector Service   │    
-│                 │    │    (Port 8070)       │    
-└─────────────────┘    └──────────────────────┘    
-                              │                    
-        ┌─────────────────────┼─────────────────────┐
-        │                     │                     │
-┌───────▼────────┐   ┌────────▼────────┐   ┌───────▼────────┐
-│   Identity &    │   │   Business &    │   │  Specialized   │
-│   Immigration   │   │   Financial     │   │   Services     │
-│                 │   │                 │   │                │
-│ • HMRC         │   │ • Companies     │   │ • Law Enforce. │
-│ • DWP          │   │   House         │   │ • Courts       │
-│ • NHS          │   │ • Financial     │   │ • Professional │
-│ • DVLA         │   │   Services      │   │   Bodies       │
-│ • Home Office  │   │ • Business &    │   │ • Local Gov    │
-│ • Border Ctrl  │   │   Trade         │   │ • Transport    │
-└────────────────┘   │ • Land Registry │   │ • Healthcare   │
-                     └─────────────────┘   └────────────────┘
+┌─────────────────┐    ┌──────────────────────┐    ┌─────────────────┐
+│ Core Engine     │───▶│  Unified Government  │───▶│   Sync Service  │
+│ Verification    │    │  Connector Service   │    │  (Redis Pub/Sub)│
+│                 │    │    (Port 8070)       │    │                 │
+└─────────────────┘    └──────────────────────┘    └─────────────────┘
+                              │                           │
+        ┌─────────────────────┼─────────────────────┐     │
+        │                     │                     │     │
+┌───────▼────────┐   ┌────────▼────────┐   ┌───────▼────────┐     │
+│   Identity &    │   │   Business &    │   │  Specialized   │     │
+│   Immigration   │   │   Financial     │   │   Services     │     │
+│                 │   │                 │   │                │     │
+│ • HMRC         │   │ • Companies     │   │ • Law Enforce. │     │
+│ • DWP          │   │   House         │   │ • Courts       │     │
+│ • NHS          │   │ • Financial     │   │ • Professional │     │
+│ • DVLA         │   │   Services      │   │   Bodies       │     │
+│ • Home Office  │   │ • Business &    │   │ • Local Gov    │     │
+│ • Border Ctrl  │   │   Trade         │   │ • Transport    │     │
+└────────────────┘   │ • Land Registry │   │ • Healthcare   │     │
+                     └─────────────────┘   └────────────────┘     │
+                              ▲                                   │
+                              └───────────────────────────────────┘
+                                   Government Feed Events
 ```
 
 ## 🏛️ Government API Coverage (25 Systems)
@@ -49,6 +52,14 @@ Comprehensive Spring Boot 3.1.0 service providing secure integrations with 25 UK
 | **Property** | Land Registry, Local Government | Property ownership, council services |
 | **Environment** | DEFRA, Housing & Communities | Environmental records, housing |
 | **Innovation** | Culture Media Sport, Energy Security, Science Innovation | Licenses, grants, research |
+
+## 🔄 Sync Capabilities
+
+- **Redis Pub/Sub Integration**: Real-time event-driven synchronization with government feeds
+- **Reactive Event Handling**: Non-blocking subscription to citizen data updates
+- **Bidirectional Sync**: Publish verification results and subscribe to government data changes
+- **Event Correlation**: Request IDs for tracking sync operations across services
+- **TTL Caching**: Time-based cache invalidation for fresh government data
 
 ## API Endpoints
 
@@ -104,6 +115,7 @@ data class EligibilityResponse(
 ## Security Features
 
 - **API Authentication**: Bearer token validation for HMRC calls
+- **Data Encryption**: AES-GCM encryption for sensitive government data storage and transmission
 - **Input Sanitization**: JSR-303 validation prevents injection attacks  
 - **CORS Restrictions**: Limited to approved frontend domains
 - **Request Logging**: Comprehensive audit trail for compliance
@@ -113,9 +125,9 @@ data class EligibilityResponse(
 
 - **Reactive Streams**: Non-blocking I/O with Project Reactor
 - **Connection Pooling**: Persistent HTTP connections to government APIs
-- **Caching Strategy**: PostgreSQL cache for frequently accessed data
-- **Timeout Configuration**: 5-second timeouts prevent hanging requests
+- **TTL Caching**: Time-based cache invalidation for frequently accessed government data
 - **Parallel Processing**: Concurrent API calls where possible
+- **Timeout Configuration**: 5-second timeouts prevent hanging requests
 
 ## Configuration
 

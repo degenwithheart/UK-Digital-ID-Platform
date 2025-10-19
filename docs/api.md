@@ -752,7 +752,89 @@ Detailed health information.
 }
 ```
 
-## 🔧 Error Handling
+## � Sync Endpoints
+
+### WebSocket Connection `/api/v1/sync/ws`
+Establish real-time WebSocket connection for live updates.
+
+**Connection URL:**
+```
+wss://api.digital-identity.gov.uk/api/v1/sync/ws?token={jwt_token}
+```
+
+**Connection Message:**
+```json
+{
+  "type": "subscribe",
+  "channels": ["credential_updates", "verification_status", "government_feed"],
+  "user_id": "550e8400-e29b-41d4-a716-446655440000"
+}
+```
+
+**Incoming Messages:**
+```json
+{
+  "type": "credential_update",
+  "data": {
+    "credential_id": "cred_123456789",
+    "status": "updated",
+    "changes": ["verification_level"],
+    "timestamp": "2025-10-09T14:50:00Z"
+  }
+}
+```
+
+### POST `/api/v1/sync/events`
+Publish sync event to Redis pub/sub.
+
+**Request Body:**
+```json
+{
+  "event_type": "user_verification_complete",
+  "user_id": "550e8400-e29b-41d4-a716-446655440000",
+  "data": {
+    "verification_id": "verify_abc123",
+    "result": "verified",
+    "confidence_score": 0.95
+  },
+  "channels": ["fraud_analytics", "mobile_wallet"]
+}
+```
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "event_id": "evt_987654321",
+    "published_channels": 2,
+    "timestamp": "2025-10-09T14:50:00Z"
+  }
+}
+```
+
+### GET `/api/v1/sync/status`
+Check sync system status and connection health.
+
+**Response (200 OK):**
+```json
+{
+  "success": true,
+  "data": {
+    "redis_status": "connected",
+    "active_connections": 1247,
+    "messages_per_second": 89,
+    "channels": {
+      "credential_updates": 456,
+      "verification_status": 234,
+      "government_feed": 123
+    },
+    "last_sync": "2025-10-09T14:49:45Z"
+  }
+}
+```
+
+## �🔧 Error Handling
 
 ### Standard Error Response Format
 ```json

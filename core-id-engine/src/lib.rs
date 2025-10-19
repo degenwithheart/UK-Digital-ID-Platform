@@ -157,6 +157,7 @@ pub struct SystemMetrics {
 pub struct CoreIdEngine {
     pub config: Config,
     pub crypto_manager: Arc<CryptoManager>,
+    pub degenhf_security: Arc<crypto::DegenHF>, // DegenHF distributed security framework
     pub verification_manager: Arc<VerificationManager>,
     pub cache_manager: Arc<CacheManager>,
     pub database_manager: Arc<DatabaseManager>,
@@ -179,23 +180,34 @@ impl CoreIdEngine {
 
         // Initialize managers
         let crypto_manager = Arc::new(CryptoManager::new(&config.crypto).await?);
+        
+        // Initialize DegenHF distributed security framework
+        let threshold_config = crypto::ThresholdConfig {
+            total_trustees: 10,
+            required_signatures: 7,
+            emergency_threshold: 9,
+        };
+        let mut degenhf_security = crypto::DegenHF::new(threshold_config)?;
+        degenhf_security.initialize_trustees()?;
+        let degenhf_security = Arc::new(degenhf_security);
+        
         let cache_manager = Arc::new(CacheManager::new(&config.redis).await?);
-        let database_manager = Arc::new(DatabaseManager::new(&config.database).await?);
+        let database_manager = Arc::new(DatabaseManager::new(Arc::clone(&crypto_manager)).await?);
         let metrics_collector = Arc::new(MetricsCollector::new(&config.monitoring).await?);
         let audit_logger = Arc::new(AuditLogger::new(&config.audit, Arc::clone(&database_manager)).await?);
         
+        // Initialize synchronization services first
+        let sync_service = Arc::new(SyncService::new("redis://localhost:6379").await?);
+        
         let verification_manager = Arc::new(
             VerificationManager::new(
-                &config.verification,
+                Arc::clone(&crypto_manager),
                 Arc::clone(&cache_manager),
                 Arc::clone(&database_manager),
-                Arc::clone(&metrics_collector),
-                Arc::clone(&audit_logger),
+                Arc::clone(&sync_service),
             ).await?
         );
 
-        // Initialize synchronization services
-        let sync_service = Arc::new(SyncService::new("redis://localhost:6379")?);
         let component_integration = Arc::new(ComponentIntegration::new(
             Arc::clone(&sync_service),
             Arc::clone(&database_manager),
@@ -205,15 +217,18 @@ impl CoreIdEngine {
         let rate_limiter = Arc::new(Semaphore::new(config.verification.max_concurrent_verifications as usize));
         let active_requests = Arc::new(RwLock::new(HashMap::new()));
 
-        // Start background tasks
+                // Start background tasks
         let engine = Self {
             config,
             crypto_manager,
+            degenhf_security,
             verification_manager,
             cache_manager,
             database_manager,
             metrics_collector,
             audit_logger,
+            sync_service,
+            component_integration,
             rate_limiter,
             active_requests,
             start_time: Instant::now(),
@@ -265,6 +280,27 @@ impl CoreIdEngine {
                 if let Err(e) = cache_manager.cleanup_expired().await {
                     error!("Failed to cleanup expired cache entries: {}", e);
                 }
+            }
+        });
+
+        // Start government data sync subscription
+        let sync_service = Arc::clone(&self.sync_service);
+        let database_manager = Arc::clone(&self.database_manager);
+        let verification_manager = Arc::clone(&self.verification_manager);
+        tokio::spawn(async move {
+            let callback = move |event: crate::sync::SyncEvent| {
+                match event {
+                    crate::sync::SyncEvent::ConnectorDataReceived { source, data } => {
+                        // Handle government data received
+                        info!("Received government data from {}: {:?}", source, data);
+                        // Could update verification rules or cache based on gov data
+                    }
+                    _ => {}
+                }
+                Ok(())
+            };
+            if let Err(e) = sync_service.subscribe_to_events(callback).await {
+                error!("Failed to subscribe to sync events: {:?}", e);
             }
         });
 
@@ -378,6 +414,176 @@ impl CoreIdEngine {
     pub async fn get_metrics(&self) -> Result<SystemMetrics> {
         self.metrics_collector.get_system_metrics().await
     }
+
+    // ============================================================================
+    // DegenHF Security Framework Integration
+    // ============================================================================
+
+    /// Authorize critical identity operations using DegenHF threshold cryptography
+    #[instrument(skip(self))]
+    pub async fn authorize_critical_identity_operation(
+        &self,
+        operation: &str,
+        user_id: &str,
+        data_source: &DataSource,
+    ) -> Result<crypto::AuthorizationProof> {
+        info!("Authorizing critical identity operation: {} for user: {}", operation, user_id);
+        
+        // Create operation string for authorization
+        let operation_string = format!("{}_{}_{}", operation, user_id, serde_json::to_string(data_source)?);
+        
+        // Get authorization from DegenHF framework
+        let authorization = self.degenhf_security.authorize_critical_operation(
+            &operation_string,
+            "core-id-engine"
+        ).await?;
+        
+        // Log the authorization
+        self.audit_logger.log_security_event(
+            "critical_operation_authorized",
+            &format!("Operation: {}, User: {}, DataSource: {:?}", operation, user_id, data_source),
+            Some(&authorization.timestamp.to_string()),
+        ).await?;
+        
+        Ok(authorization)
+    }
+
+    /// Verify government data access requests with zero-knowledge proofs
+    #[instrument(skip(self))]
+    pub async fn verify_government_data_access(
+        &self,
+        government_entity: &str,
+        requested_data: &[u8],
+        access_purpose: &str,
+    ) -> Result<crypto::ZKP> {
+        info!("Verifying government data access request from: {}", government_entity);
+        
+        let request = crypto::GovernmentRequest {
+            entity: government_entity.to_string(),
+            purpose: access_purpose.to_string(),
+            data: requested_data.to_vec(),
+            proof_data: vec![], // Would contain government credentials/proof
+        };
+        
+        // Verify request with DegenHF ZKP
+        let zkp = self.degenhf_security.verify_government_request(&request)?;
+        
+        // Log the verification
+        self.audit_logger.log_security_event(
+            "government_access_verified",
+            &format!("Entity: {}, Purpose: {}", government_entity, access_purpose),
+            None,
+        ).await?;
+        
+        Ok(zkp)
+    }
+
+    /// Citizen veto - allows individuals to block government access to their data
+    #[instrument(skip(self))]
+    pub async fn citizen_veto_data_access(
+        &self,
+        citizen_id: &str,
+        data_type: &str,
+    ) -> Result<()> {
+        info!("Processing citizen veto for user: {}, data_type: {}", citizen_id, data_type);
+        
+        // Execute citizen veto through DegenHF
+        self.degenhf_security.citizen_veto(citizen_id, data_type).await?;
+        
+        // Immediately update access controls
+        self.enforce_citizen_veto(citizen_id, data_type).await?;
+        
+        // Log the veto
+        self.audit_logger.log_security_event(
+            "citizen_veto_executed",
+            &format!("Citizen: {}, DataType: {}", citizen_id, data_type),
+            None,
+        ).await?;
+        
+        Ok(())
+    }
+
+    /// Emergency shutdown - distributed kill switches across all systems
+    #[instrument(skip(self))]
+    pub async fn activate_emergency_shutdown(
+        &self,
+        trigger_reason: &str,
+        evidence: &[u8],
+    ) -> Result<()> {
+        warn!("Activating emergency shutdown: {}", trigger_reason);
+        
+        let trigger = crypto::EmergencyTrigger {
+            trigger_type: "system_compromise".to_string(),
+            reason: trigger_reason.to_string(),
+            evidence: evidence.to_vec(),
+        };
+        
+        // Activate DegenHF emergency protocol
+        self.degenhf_security.activate_emergency_shutdown(&trigger).await?;
+        
+        // Broadcast shutdown to all connected systems
+        self.sync_service.publish_event("emergency_shutdown", &trigger).await?;
+        
+        // Log emergency activation
+        self.audit_logger.log_security_event(
+            "emergency_shutdown_activated",
+            trigger_reason,
+            None,
+        ).await?;
+        
+        Ok(())
+    }
+
+    /// Get DegenHF security status and trustee information
+    #[instrument(skip(self))]
+    pub async fn get_degenhf_security_status(&self) -> Result<DegenHFStatus> {
+        // In a real implementation, this would query the DegenHF framework
+        // for current security status, active trustees, etc.
+        
+        Ok(DegenHFStatus {
+            framework_active: true,
+            total_trustees: 10,
+            active_trustees: 7,
+            last_authorization: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            emergency_switches_active: 5,
+        })
+    }
+
+    // Helper methods
+    async fn enforce_citizen_veto(&self, citizen_id: &str, data_type: &str) -> Result<()> {
+        // Update database access controls
+        self.database_manager.revoke_access(citizen_id, data_type).await?;
+        
+        // Update cache policies
+        self.cache_manager.invalidate_user_cache(citizen_id).await?;
+        
+        // Notify other systems via sync
+        let veto_event = serde_json::json!({
+            "type": "citizen_veto",
+            "citizen_id": citizen_id,
+            "data_type": data_type,
+            "timestamp": std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+        });
+        
+        self.sync_service.publish_event("citizen_veto", &veto_event).await?;
+        
+        Ok(())
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+pub struct DegenHFStatus {
+    pub framework_active: bool,
+    pub total_trustees: usize,
+    pub active_trustees: usize,
+    pub last_authorization: u64,
+    pub emergency_switches_active: usize,
 }
 
 #[cfg(test)]

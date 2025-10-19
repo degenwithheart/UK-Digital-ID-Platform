@@ -56,8 +56,42 @@ class WalletProvider with ChangeNotifier {
       await loadUsageStatistics();
       await checkVerificationStatus();
       await loadStorageStats();
+      await startSync();
     } catch (error) {
       _setError('Failed to initialize wallet');
+    }
+  }
+
+  /// Start real-time synchronization
+  Future<void> startSync() async {
+    try {
+      // Connect to WebSocket for real-time updates
+      await ApiService.instance.connectWebSocket('wallet-sync', (message) {
+        _handleSyncMessage(message);
+      });
+    } catch (error) {
+      logger.e('Failed to start sync: $error');
+    }
+  }
+
+  /// Handle incoming sync messages
+  void _handleSyncMessage(Map<String, dynamic> message) {
+    final eventType = message['type'];
+    switch (eventType) {
+      case 'credential_updated':
+        loadCredentials();
+        break;
+      case 'activity_added':
+        loadRecentActivity();
+        break;
+      case 'verification_status_changed':
+        checkVerificationStatus();
+        break;
+      case 'connector_data_received':
+        // Handle government data sync, e.g., update credentials based on gov records
+        logger.i('Received government data: $message');
+        loadCredentials(); // Refresh credentials
+        break;
     }
   }
 

@@ -4,29 +4,33 @@ High-performance cryptographic and verification engine for the UK Digital Identi
 
 ## 🎯 Features
 
-- **RING + AES-GCM Cryptography**: Blake3 hashing with 256-bit AES-GCM encryption
-- **Multi-Source Verification**: Integrates with 15+ government data sources
-- **Async Processing**: Tokio runtime with concurrent verification pipelines  
+- **RING + AES-GCM Cryptography**: Blake3 hashing with 256-bit AES-GCM encryption for data at rest and in transit
+- **Multi-Source Verification**: Integrates with 15+ government data sources with real-time sync
+- **Async Processing**: Tokio runtime with concurrent verification pipelines and rate limiting
+- **Event-Driven Sync**: Redis pub/sub for publishing verification events and subscribing to government data
 - **FFI Integration**: C-compatible dylib/rlib for Go gateway integration
-- **Redis Caching**: High-performance caching layer for verification results
-- **PostgreSQL Audit**: Comprehensive audit logging with SQL injection protection
-- **Real-time Sync**: Cross-component synchronization via Redis event bus
+- **Privacy Protection**: Encrypted database storage with hashed lookups, comprehensive audit logging
+- **Redis Caching**: High-performance L1/L2 caching layer for verification results
+- **PostgreSQL Audit**: Comprehensive audit logging with SQL injection protection and encrypted sensitive data
+- **Real-time Sync**: Cross-component synchronization via Redis event bus with government feed integration
 
 ## 🏗️ Architecture
 
 ```
 ┌─────────────────┐
-│   API Module    │ ← HTTP/gRPC endpoints
+│   API Module    │ ← HTTP/gRPC endpoints with rate limiting
 ├─────────────────┤
 │ Verification    │ ← Multi-source verification engine
 │   Manager       │   (15+ government data sources)
 ├─────────────────┤
-│ Crypto Manager  │ ← RING cryptography + AES-GCM
+│ Crypto Manager  │ ← RING cryptography + AES-GCM encryption
 ├─────────────────┤
-│ Cache/Database  │ ← Redis + PostgreSQL
-│   Managers      │   
+│ Cache/Database  │ ← Redis L1/L2 caching + PostgreSQL
+│   Managers      │   with encrypted storage
 ├─────────────────┤
-│ Sync + Metrics  │ ← Component integration
+│ Sync Service    │ ← Redis pub/sub for event sync
+├─────────────────┤
+│ Metrics + Audit │ ← Component integration & monitoring
 └─────────────────┘
 ```
 
@@ -34,14 +38,14 @@ High-performance cryptographic and verification engine for the UK Digital Identi
 
 | Module | Purpose | Key Features |
 |--------|---------|--------------|
-| **lib.rs** | Main engine orchestration | Rate limiting, request handling, component integration |
-| **crypto.rs** | Cryptographic operations | RING, AES-GCM, Blake3 hashing, secure key management |  
-| **verification.rs** | Identity verification | Multi-source data validation, parallel processing |
-| **cache.rs** | Performance optimization | Redis integration, TTL management, cache invalidation |
-| **database.rs** | Audit & persistence | PostgreSQL, prepared statements, connection pooling |
-| **api.rs** | External interfaces | REST/gRPC endpoints, FFI exports for Go integration |
-| **sync.rs** | Component synchronization | Redis pubsub, cross-component messaging |
-| **metrics.rs** | Observability | Performance monitoring, structured logging |
+| **lib.rs** | Main engine orchestration | Rate limiting, request handling, component integration, event subscription |
+| **crypto.rs** | Cryptographic operations | RING, AES-GCM, Blake3 hashing, secure key management, data encryption |
+| **verification.rs** | Identity verification | Multi-source data validation, parallel processing, event publishing |
+| **cache.rs** | Performance optimization | Redis L1/L2 integration, TTL management, cache invalidation, compression |
+| **database.rs** | Audit & persistence | PostgreSQL with encrypted storage, prepared statements, connection pooling |
+| **api.rs** | External interfaces | REST/gRPC endpoints, FFI exports for Go integration, compression |
+| **sync.rs** | Component synchronization | Redis pub/sub, cross-component messaging, government data subscription |
+| **metrics.rs** | Observability | Performance monitoring, structured logging, health checks |
 
 ## Core Functions
 

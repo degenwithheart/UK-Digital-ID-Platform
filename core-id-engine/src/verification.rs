@@ -13,14 +13,16 @@ use crate::{
     crypto::CryptoEngine,
     cache::CacheManager,
     database::DatabaseManager,
+    sync::SyncService,
     CoreEngineError
 };
 
 #[derive(Clone)]
-pub struct VerificationEngine {
+pub struct VerificationManager {
     crypto_engine: Arc<CryptoEngine>,
     cache_manager: Arc<CacheManager>,
     database_manager: Arc<DatabaseManager>,
+    sync_service: Arc<SyncService>,
     connector_clients: Arc<RwLock<HashMap<DataSource, ConnectorClient>>>,
     verification_rules: Arc<RwLock<Vec<VerificationRule>>>,
 }
@@ -43,11 +45,12 @@ struct VerificationRule {
     pub cross_reference_required: bool,
 }
 
-impl VerificationEngine {
+impl VerificationManager {
     pub async fn new(
         crypto_engine: Arc<CryptoEngine>,
         cache_manager: Arc<CacheManager>,
         database_manager: Arc<DatabaseManager>,
+        sync_service: Arc<SyncService>,
     ) -> Result<Self> {
         let mut connector_clients = HashMap::new();
         
@@ -86,6 +89,7 @@ impl VerificationEngine {
             crypto_engine,
             cache_manager,
             database_manager,
+            sync_service,
             connector_clients: Arc::new(RwLock::new(connector_clients)),
             verification_rules: Arc::new(RwLock::new(verification_rules)),
         })
@@ -154,6 +158,15 @@ impl VerificationEngine {
 
         // Store in database for audit
         self.store_verification_result(request, &verification_result).await?;
+
+        // Publish sync event
+        let event = crate::sync::SyncEvent::IdentityVerified {
+            citizen_id: request.citizen_id.clone(),
+            status: verification_result.status.clone(),
+        };
+        if let Err(e) = self.sync_service.publish_event(event).await {
+            tracing::warn!("Failed to publish sync event: {:?}", e);
+        }
 
         Ok(verification_result)
     }

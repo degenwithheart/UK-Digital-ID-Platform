@@ -20,6 +20,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-validation") // for validation
     implementation("org.springframework.boot:spring-boot-starter-security") // for enhanced security
     implementation("org.springframework.boot:spring-boot-starter-cache") // for response caching
+    implementation("org.springframework.boot:spring-boot-starter-data-redis")
+    implementation("org.springframework.security:spring-security-crypto")
     implementation("org.postgresql:postgresql:42.6.0")
     implementation("org.slf4j:slf4j-api:2.0.9")
     implementation("ch.qos.logback:logback-classic:1.4.11")

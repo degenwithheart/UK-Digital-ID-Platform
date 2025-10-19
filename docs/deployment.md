@@ -664,7 +664,262 @@ security_metrics:
   - certificate_expiry: >30 days
 ```
 
-## 🔧 Troubleshooting
+## � Advanced Scaling & Security
+
+### Horizontal Pod Autoscaling (HPA)
+
+#### HPA Configuration
+```yaml
+# infra/k8s/scaling-policies.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: go-gateway-hpa
+  namespace: digital-identity
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: go-gateway
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: External
+    external:
+      metric:
+        name: nginx_ingress_controller_requests_per_second
+        selector:
+          matchLabels:
+            app: go-gateway
+      target:
+        type: Value
+        value: "100"
+  behavior:
+    scaleDown:
+      stabilizationWindowSeconds: 300
+      policies:
+      - type: Percent
+        value: 10
+        periodSeconds: 60
+    scaleUp:
+      stabilizationWindowSeconds: 60
+      policies:
+      - type: Percent
+        value: 50
+        periodSeconds: 60
+        max: 4
+```
+
+#### Custom Metrics HPA
+```yaml
+# Redis queue length based scaling
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: fraud-analytics-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: fraud-analytics
+  minReplicas: 2
+  maxReplicas: 10
+  metrics:
+  - type: External
+    external:
+      metric:
+        name: redis_queue_length
+        selector:
+          matchLabels:
+            queue: fraud-detection
+      target:
+        type: Value
+        value: "100"
+```
+
+### Network Policies
+
+#### Service Isolation
+```yaml
+# infra/k8s/network-policies.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: api-gateway-policy
+  namespace: digital-identity
+spec:
+  podSelector:
+    matchLabels:
+      app: go-gateway
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: ingress-nginx
+    ports:
+    - protocol: TCP
+      port: 8080
+  - from:
+    - podSelector:
+        matchLabels:
+          app: citizen-portal
+    ports:
+    - protocol: TCP
+      port: 8080
+  - from:
+    - podSelector:
+        matchLabels:
+          app: admin-dashboard
+    ports:
+    - protocol: TCP
+      port: 8080
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: rust-core
+    ports:
+    - protocol: TCP
+      port: 3000
+  - to:
+    - podSelector:
+        matchLabels:
+          app: kotlin-connectors
+    ports:
+    - protocol: TCP
+      port: 8070
+  - to:
+    - podSelector:
+        matchLabels:
+          app: postgresql
+    ports:
+    - protocol: TCP
+      port: 5432
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+```
+
+#### Sync Traffic Security
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sync-traffic-policy
+spec:
+  podSelector:
+    matchLabels:
+      component: sync-service
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - podSelector:
+        matchLabels:
+          app: go-gateway
+    ports:
+    - protocol: TCP
+      port: 8080
+  - from:
+    - podSelector:
+        matchLabels:
+          app: rust-core
+    ports:
+    - protocol: TCP
+      port: 3000
+  egress:
+  - to:
+    - podSelector:
+        matchLabels:
+          app: redis
+    ports:
+    - protocol: TCP
+      port: 6379
+  - to:
+    - podSelector:
+        matchLabels:
+          app: kafka
+    ports:
+    - protocol: TCP
+      port: 9092
+```
+
+### Enhanced Monitoring
+
+#### Sync System Monitoring
+```yaml
+# Prometheus sync metrics
+scrape_configs:
+  - job_name: 'redis-sync'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    metrics_path: /scrape
+    params:
+      target: ['redis:6379']
+  
+  - job_name: 'kafka-sync'
+    static_configs:
+      - targets: ['kafka-exporter:9308']
+    metrics_path: /metrics
+  
+  - job_name: 'sync-service'
+    static_configs:
+      - targets: ['sync-service:8080']
+    metrics_path: /metrics
+```
+
+#### Security Event Monitoring
+```yaml
+# Security monitoring alerts
+groups:
+- name: security_sync_alerts
+  rules:
+  - alert: SyncServiceDown
+    expr: up{job="sync-service"} == 0
+    for: 5m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Sync service is down"
+  
+  - alert: HighSyncLatency
+    expr: histogram_quantile(0.95, rate(sync_request_duration_seconds_bucket[5m])) > 1
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "High sync request latency detected"
+  
+  - alert: SyncQueueBacklog
+    expr: redis_queue_length{queue="sync-events"} > 1000
+    for: 2m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Sync event queue backlog detected"
+```
+
+## �🔧 Troubleshooting
 
 ### Common Issues
 

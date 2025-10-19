@@ -4,12 +4,16 @@ use uuid::Uuid;
 use chrono::{DateTime, Utc};
 use anyhow::{Result, Context};
 use std::collections::HashMap;
+use base64::{Engine as _, engine::general_purpose};
 
 use crate::{IdentityVerificationRequest, VerificationResult, DataSource};
+
+use crate::crypto::CryptoManager;
 
 #[derive(Clone)]
 pub struct DatabaseManager {
     pool: PgPool,
+    crypto_manager: Arc<CryptoManager>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -39,7 +43,7 @@ pub struct AuditLogEntry {
 }
 
 impl DatabaseManager {
-    pub async fn new() -> Result<Self> {
+    pub async fn new(crypto_manager: Arc<CryptoManager>) -> Result<Self> {
         let database_url = std::env::var("DATABASE_URL")
             .unwrap_or_else(|_| "postgresql://postgres:password@postgres:5432/identity_db".to_string());
 
@@ -54,7 +58,7 @@ impl DatabaseManager {
         sqlx::migrate!("./migrations").run(&pool).await
             .context("Failed to run database migrations")?;
 
-        Ok(Self { pool })
+        Ok(Self { pool, crypto_manager })
     }
 
     pub async fn store_verification(
@@ -64,18 +68,25 @@ impl DatabaseManager {
     ) -> Result<Uuid> {
         let record_id = Uuid::new_v4();
         
+        // Encrypt sensitive data
+        let encrypted_citizen_id = self.crypto_manager.encrypt_data(request.citizen_id.as_bytes()).await?;
+        let encrypted_data_json = serde_json::to_string(&encrypted_citizen_id)?;
+        let citizen_hash = self.crypto_manager.hash_data(request.citizen_id.as_bytes()).await?;
+        let citizen_hash_b64 = base64::encode(citizen_hash.as_bytes());
+        
         sqlx::query!(
             r#"
             INSERT INTO verification_records (
-                id, request_id, citizen_id, verification_type, status,
+                id, request_id, citizen_id, citizen_hash, verification_type, status,
                 confidence_score, risk_score, identity_match, processing_time_ms,
                 created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
             "#,
             record_id,
             result.request_id,
-            request.citizen_id,
+            encrypted_data_json,
+            citizen_hash_b64,
             serde_json::to_string(&request.verification_type)?,
             serde_json::to_string(&result.status)?,
             result.confidence_score,
@@ -429,6 +440,52 @@ pub struct VerificationTrend {
     pub avg_risk_score: f64,
     pub successful_count: u64,
 }
+
+    pub async fn get_verification_history(&self, citizen_id: &str, limit: i32) -> Result<Vec<VerificationRecord>> {
+        let citizen_hash = self.crypto_manager.hash_data(citizen_id.as_bytes()).await?;
+        let citizen_hash_b64 = base64::encode(citizen_hash.as_bytes());
+
+        let rows = sqlx::query!(
+            r#"
+            SELECT id, request_id, citizen_id, verification_type, status,
+                   confidence_score, risk_score, identity_match, processing_time_ms,
+                   created_at, updated_at
+            FROM verification_records
+            WHERE citizen_hash = $1
+            ORDER BY created_at DESC
+            LIMIT $2
+            "#,
+            citizen_hash_b64,
+            limit
+        )
+        .fetch_all(&self.pool)
+        .await
+        .context("Failed to fetch verification history")?;
+
+        let mut records = Vec::new();
+        for row in rows {
+            // Decrypt citizen_id
+            let encrypted_data: crate::crypto::EncryptedData = serde_json::from_str(&row.citizen_id)?;
+            let decrypted_citizen_id_bytes = self.crypto_manager.decrypt_data(&encrypted_data).await?;
+            let decrypted_citizen_id = String::from_utf8(decrypted_citizen_id_bytes)?;
+
+            records.push(VerificationRecord {
+                id: row.id,
+                request_id: row.request_id,
+                citizen_id: decrypted_citizen_id,
+                verification_type: serde_json::from_str(&row.verification_type)?,
+                status: serde_json::from_str(&row.status)?,
+                confidence_score: row.confidence_score,
+                risk_score: row.risk_score,
+                identity_match: row.identity_match,
+                processing_time_ms: row.processing_time_ms,
+                created_at: row.created_at,
+                updated_at: row.updated_at,
+            });
+        }
+
+        Ok(records)
+    }
 
 #[cfg(test)]
 mod tests {

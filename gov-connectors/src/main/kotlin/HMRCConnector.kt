@@ -9,10 +9,14 @@ import javax.validation.constraints.NotBlank
 import javax.validation.constraints.Min
 import org.slf4j.Logger
 import org.slf4j.LoggerFactory
+import com.uk.gov.connectors.service.SyncService
 
 @RestController
 @RequestMapping("/api/connectors")
-class HMRCConnector @Autowired constructor(private val webClient: WebClient) {
+class HMRCConnector @Autowired constructor(
+    private val webClient: WebClient,
+    private val syncService: SyncService
+) {
 
     private val logger: Logger = LoggerFactory.getLogger(HMRCConnector::class.java)
 
@@ -26,18 +30,40 @@ class HMRCConnector @Autowired constructor(private val webClient: WebClient) {
             .retrieve()
             .bodyToMono(Map::class.java)
             .timeout(java.time.Duration.ofSeconds(5))
-            .doOnError { e -> logger.error("Error syncing citizen data for {}", payload.citizenId, e) }
+            .doOnNext { response ->
+                // Publish sync event
+                syncService.publishEvent("hmrc_data_synced", mapOf("citizen_id" to payload.citizenId, "status" to "success"))
+                // Encrypt sensitive data
+                if (response.containsKey("taxPaid")) {
+                    response["taxPaid"] = syncService.encryptData(response["taxPaid"].toString())
+                }
+            }
+            .doOnError { e ->
+                logger.error("Error syncing citizen data for {}", payload.citizenId, e)
+                syncService.publishEvent("hmrc_sync_failed", mapOf("citizen_id" to payload.citizenId, "error" to e.message))
+            }
             .onErrorReturn(mapOf("status" to "error", "message" to "HMRC API unavailable"))
     }
 
     @GetMapping("/tax-records/{nino}")
     fun getTaxRecords(@PathVariable @NotBlank nino: String): Mono<Map<String, Any>> {
-        // Simulate fetching tax records with caching simulation
-        return webClient.get()
-            .uri("https://api.hmrc.gov.uk/test/individuals/income/$nino")
-            .retrieve()
-            .bodyToMono(Map::class.java)
-            .defaultIfEmpty(mapOf("nino" to nino, "taxPaid" to 15000.0, "status" to "verified"))
+        val cacheKey = "hmrc:tax:$nino"
+        return syncService.getCachedData(cacheKey)
+            .flatMap { cached ->
+                if (cached != null) {
+                    Mono.just(com.fasterxml.jackson.databind.ObjectMapper().readValue(cached, Map::class.java))
+                } else {
+                    webClient.get()
+                        .uri("https://api.hmrc.gov.uk/test/individuals/income/$nino")
+                        .retrieve()
+                        .bodyToMono(Map::class.java)
+                        .defaultIfEmpty(mapOf("nino" to nino, "taxPaid" to 15000.0, "status" to "verified"))
+                        .doOnNext { data ->
+                            val json = com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(data)
+                            syncService.cacheData(cacheKey, json, 3600) // cache for 1 hour
+                        }
+                }
+            }
     }
 
     @PostMapping("/verify-eligibility")

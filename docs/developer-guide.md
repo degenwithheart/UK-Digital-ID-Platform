@@ -4,7 +4,130 @@
 
 This guide provides comprehensive information for developers working on the UK Digital Identity Platform. It covers development setup, coding standards, testing procedures, and contribution guidelines.
 
-## 🛠️ Development Environment Setup
+## � DegenHF Security Framework
+
+**DegenHF** is the platform's core security framework that implements mathematically-proven protections against hacking and government misuse. All development must integrate with DegenHF to maintain the system's incorruptible security guarantees.
+
+### Security Development Principles
+
+#### 1. Threshold Authorization
+All critical operations require threshold cryptography:
+```rust
+// Always use DegenHF for critical operations
+let authorization = degenhf.authorize_critical_operation(
+    "user_data_access",
+    &user_id,
+).await?;
+```
+
+#### 2. Zero-Knowledge Proofs
+Verify legitimacy without revealing sensitive data:
+```go
+// Use ZKP for privacy-preserving verification
+zkp, err := degenHF.VerifyGovernmentRequest(&request)
+if err != nil {
+    return err // Request cannot be verified
+}
+```
+
+#### 3. Immutable Audit Logging
+All security events must be logged immutably:
+```rust
+// Log all security events
+audit_logger.log_security_event(
+    "government_data_access",
+    &format!("Entity: {}, Purpose: {}", entity, purpose),
+    Some(&timestamp.to_string()),
+).await?;
+```
+
+### Development Security Requirements
+
+#### Code Review Checklist
+- [ ] All critical operations use DegenHF authorization
+- [ ] Government interactions verified with ZKP
+- [ ] Audit trails implemented for security events
+- [ ] Emergency safeguards integrated
+- [ ] Citizen opt-out mechanisms implemented (default: government access allowed)
+- [ ] Government access control checks implemented
+- [ ] Threshold cryptography requirements met
+
+#### Testing Requirements
+- [ ] Unit tests for DegenHF integration
+- [ ] Integration tests for threshold operations
+- [ ] Security regression tests
+- [ ] Audit trail verification tests
+- [ ] Emergency protocol tests
+
+### Emergency Development Protocols
+
+#### Kill Switch Integration
+```go
+// Integrate kill switches into services
+func (s *Service) checkEmergencyStatus() error {
+    emergency, reason := degenHF.CheckEmergencyStatus()
+    if emergency {
+        log.Warn("Emergency shutdown triggered: %s", reason)
+        return s.initiateEmergencyShutdown()
+    }
+    return nil
+}
+```
+
+#### Citizen Data Access Control
+**Default Behavior**: Government access to citizen data is **ALLOWED** by default. Citizens maintain ultimate authority through explicit opt-out mechanisms.
+
+```typescript
+// Handle citizen opt-out requests with confirmation
+async handleCitizenOptOut(citizenId: string, dataType: string, confirmed: boolean): Promise<OptOutResult> {
+  if (!confirmed) {
+    // Show warning about potential scrutiny
+    return {
+      requiresConfirmation: true,
+      warning: {
+        message: `You are opting out of government access to your ${dataType} data. This may trigger additional scrutiny as it could indicate you have something to hide.`,
+        severity: "warning",
+        implications: "Opting out may result in closer examination of your activities and could affect government services or benefits."
+      }
+    };
+  }
+
+  // Execute opt-out
+  await enforceOptOut(citizenId, dataType);
+
+  // Notify all systems
+  await broadcastOptOut(citizenId, dataType);
+
+  // Log immutably
+  await auditLogger.logCitizenOptOut({ citizenId, dataType });
+
+  return { optOutExecuted: true };
+}
+```
+
+#### Government Access Verification
+```typescript
+// Check if government access is allowed (default: true)
+async verifyGovernmentAccess(citizenId: string, dataType: string, governmentEntity: string): Promise<boolean> {
+  // Default is ALLOWED unless citizen has explicitly opted out
+  const accessAllowed = await degenHF.checkGovernmentAccessAllowed(citizenId, dataType);
+
+  if (!accessAllowed) {
+    throw new Error("Citizen has opted out of government access to this data type");
+  }
+
+  // Verify government legitimacy with ZKP
+  const zkp = await degenHF.verifyGovernmentRequest({
+    citizenId,
+    dataType,
+    entity: governmentEntity
+  });
+
+  return zkp !== null;
+}
+```
+
+## �🛠️ Development Environment Setup
 
 ### Prerequisites
 
@@ -1321,7 +1444,298 @@ impl CacheService {
 }
 ```
 
-## 🛡️ Security Best Practices
+## � Sync System Operations
+
+### Event-Driven Synchronization
+
+The platform uses Redis pub/sub for real-time synchronization across all services. This enables bidirectional data flow between government feeds and internal systems.
+
+#### Sync Service Architecture
+
+```rust
+// Core sync service in Rust
+pub struct SyncService {
+    redis_client: redis::Client,
+    event_handlers: HashMap<String, Box<dyn EventHandler>>,
+}
+
+impl SyncService {
+    pub async fn publish_event(&self, event: SyncEvent) -> Result<(), SyncError> {
+        let channel = format!("sync:{}", event.event_type);
+        let payload = serde_json::to_string(&event)?;
+        
+        self.redis_client.publish(&channel, payload).await?;
+        Ok(())
+    }
+    
+    pub async fn subscribe_to_events(&self) -> Result<(), SyncError> {
+        let mut pubsub = self.redis_client.get_async_connection().await?.into_pubsub();
+        
+        for event_type in &["user_registration", "verification_complete", "fraud_alert"] {
+            pubsub.subscribe(format!("sync:{}", event_type)).await?;
+        }
+        
+        loop {
+            let msg = pubsub.on_message().next().await;
+            if let Some(msg) = msg {
+                self.handle_event(msg.get_payload()?).await?;
+            }
+        }
+    }
+}
+```
+
+#### Cross-Service Event Flow
+
+```mermaid
+graph TD
+    A[Government Feed] --> B[Sync Event Published]
+    B --> C{Event Type}
+    C -->|user_registration| D[Digital ID Services]
+    C -->|verification_complete| E[Core ID Engine]
+    C -->|fraud_alert| F[Fraud Analytics]
+    D --> G[User Profile Updated]
+    E --> H[Verification Status Synced]
+    F --> I[Risk Assessment Updated]
+```
+
+#### Sync Health Monitoring
+
+```bash
+# Monitor sync event throughput
+redis-cli --raw pubsub numsub sync:user_registration sync:verification_complete
+
+# Check event processing latency
+kubectl logs -f deployment/sync-service | grep "event_processed"
+
+# Monitor sync queue depth
+redis-cli llen sync:queue
+```
+
+### Advanced Scaling
+
+#### Horizontal Pod Autoscaling
+
+The platform uses Kubernetes HPA for automatic scaling based on custom metrics:
+
+```yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: core-id-engine-hpa
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: core-id-engine
+  minReplicas: 3
+  maxReplicas: 20
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
+  - type: Pods
+    pods:
+      metric:
+        name: sync_events_per_second
+      target:
+        type: AverageValue
+        averageValue: 100
+```
+
+#### Event-Driven Scaling
+
+Services scale based on sync event volume:
+
+```go
+// Go service scaling logic
+func (s *Service) handleScaling() {
+    ticker := time.NewTicker(30 * time.Second)
+    for range ticker.C {
+        eventRate := s.getEventRate()
+        if eventRate > s.config.ScaleUpThreshold {
+            s.requestScaleUp()
+        } else if eventRate < s.config.ScaleDownThreshold {
+            s.requestScaleDown()
+        }
+    }
+}
+```
+
+#### Database Connection Pooling
+
+```rust
+// Rust connection pool configuration
+pub struct DatabaseConfig {
+    pub max_connections: u32,
+    pub min_connections: u32,
+    pub connection_timeout: Duration,
+    pub idle_timeout: Duration,
+}
+
+impl Default for DatabaseConfig {
+    fn default() -> Self {
+        Self {
+            max_connections: 20,
+            min_connections: 5,
+            connection_timeout: Duration::from_secs(30),
+            idle_timeout: Duration::from_secs(300),
+        }
+    }
+}
+```
+
+### Monitoring & Observability
+
+#### Prometheus Metrics
+
+```rust
+// Custom metrics for sync operations
+use prometheus::{Encoder, TextEncoder, register_counter, register_histogram};
+
+lazy_static! {
+    static ref SYNC_EVENTS_TOTAL: Counter = 
+        register_counter!("sync_events_total", "Total number of sync events processed")
+            .expect("Can't create metric");
+    
+    static ref EVENT_PROCESSING_DURATION: Histogram =
+        register_histogram!("event_processing_duration_seconds", 
+                          "Time spent processing sync events")
+            .expect("Can't create metric");
+}
+
+pub fn record_sync_event(event_type: &str) {
+    SYNC_EVENTS_TOTAL.inc();
+    
+    let timer = EVENT_PROCESSING_DURATION.start_timer();
+    // Process event
+    timer.observe_duration();
+}
+```
+
+#### Distributed Tracing
+
+```go
+// Go tracing with Jaeger
+import "github.com/opentracing/opentracing-go"
+
+func (s *Service) processSyncEvent(ctx context.Context, event SyncEvent) error {
+    span, ctx := opentracing.StartSpanFromContext(ctx, "process_sync_event")
+    defer span.Finish()
+    
+    span.SetTag("event.type", event.Type)
+    span.SetTag("event.id", event.ID)
+    
+    // Process event with tracing
+    return s.processEvent(ctx, event)
+}
+```
+
+#### Alerting Rules
+
+```yaml
+# Prometheus alerting rules
+groups:
+- name: sync_alerts
+  rules:
+  - alert: SyncEventProcessingSlow
+    expr: histogram_quantile(0.95, rate(event_processing_duration_seconds_bucket[5m])) > 5
+    for: 5m
+    labels:
+      severity: warning
+    annotations:
+      summary: "Sync event processing is slow"
+      description: "95th percentile of event processing duration is > 5s"
+      
+  - alert: SyncQueueDepthHigh
+    expr: sync_queue_depth > 1000
+    for: 2m
+    labels:
+      severity: critical
+    annotations:
+      summary: "Sync queue depth is too high"
+      description: "Sync queue has more than 1000 pending events"
+```
+
+#### Log Aggregation
+
+```bash
+# Structured logging example
+{
+  "timestamp": "2024-01-15T10:30:45Z",
+  "level": "info",
+  "service": "core-id-engine",
+  "event": "sync_event_processed",
+  "event_id": "evt_123456",
+  "event_type": "user_registration",
+  "processing_time_ms": 150,
+  "user_id": "usr_789",
+  "trace_id": "trace_abc123"
+}
+```
+
+#### Performance Optimization
+
+##### Async Processing Patterns
+
+```rust
+// Rust async event processing
+pub async fn process_events_concurrently(
+    events: Vec<SyncEvent>
+) -> Result<Vec<ProcessingResult>, SyncError> {
+    let tasks: Vec<_> = events.into_iter()
+        .map(|event| tokio::spawn(process_single_event(event)))
+        .collect();
+    
+    let results = futures::future::join_all(tasks).await;
+    results.into_iter()
+        .map(|r| r.map_err(SyncError::from).and_then(|r| r))
+        .collect()
+}
+```
+
+##### Caching Strategies
+
+```go
+// Go multi-level caching
+type CacheManager struct {
+    l1Cache *ristretto.Cache // In-memory
+    l2Cache redis.Client     // Redis
+    l3Cache *bigcache.BigCache // Disk
+}
+
+func (cm *CacheManager) Get(key string) (interface{}, error) {
+    // Check L1 first
+    if val, ok := cm.l1Cache.Get(key); ok {
+        return val, nil
+    }
+    
+    // Check L2
+    if val, err := cm.l2Cache.Get(ctx, key).Result(); err == nil {
+        cm.l1Cache.Set(key, val, 1) // Promote to L1
+        return val, nil
+    }
+    
+    // Check L3
+    if val, err := cm.l3Cache.Get(key); err == nil {
+        cm.l2Cache.Set(ctx, key, val, time.Hour) // Promote to L2
+        return val, nil
+    }
+    
+    return nil, ErrNotFound
+}
+```
+
+## �🛡️ Security Best Practices
 
 ### Secure Coding Guidelines
 ```rust

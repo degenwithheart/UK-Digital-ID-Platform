@@ -24,6 +24,107 @@ The UK Digital Identity Platform is an enterprise-grade, multi-language system d
 - **Caching Strategy**: Multi-layer caching with Redis
 - **Load Balancing**: Distributed traffic handling
 
+## 🔐 DegenHF Security Architecture
+
+**DegenHF** is the platform's revolutionary security framework that implements distributed trust and mathematical guarantees against both hacking and government misuse. It uses elliptic curve cryptography (ECC) combined with threshold cryptography to create an incorruptible security layer.
+
+### Security Architecture Overview
+
+```mermaid
+graph TB
+    subgraph "DegenHF Security Layer"
+        TC[Threshold<br/>Cryptography<br/>7/10 Trustees]
+        ZKP[Zero-Knowledge<br/>Proofs<br/>Privacy-Preserving]
+        IAT[Immutable<br/>Audit Trails<br/>Merkle Trees]
+        DKS[Distributed<br/>Kill Switches<br/>Emergency Controls]
+    end
+    
+    subgraph "Independent Trustees"
+        JUD[Judicial<br/>UK Supreme Court<br/>EU Court]
+        TEC[Technical<br/>EFF<br/>Open Source]
+        CIT[Citizen<br/>Random Selection<br/>NGOs]
+        GOV[Gov<br/>Limited Access<br/>Cannot Act Alone]
+    end
+    
+    subgraph "Emergency Safeguards"
+        JKS[Judicial<br/>Kill Switch]
+        TKS[Technical<br/>Kill Switch]
+        CKS[Citizen<br/>Kill Switch]
+        IKS[International<br/>Kill Switch]
+        AKS[Admin<br/>Kill Switch]
+    end
+    
+    TC --> JUD
+    TC --> TEC
+    TC --> CIT
+    TC --> GOV
+    
+    ZKP --> IAT
+    IAT --> DKS
+    
+    DKS --> JKS
+    DKS --> TKS
+    DKS --> CKS
+    DKS --> IKS
+    DKS --> AKS
+```
+
+### Distributed Trust Model
+
+#### Trustee Categories
+1. **Judicial Trustees**: UK Supreme Court, European Court of Human Rights
+2. **Technical Trustees**: Electronic Frontier Foundation (EFF), Open Source Community
+3. **Citizen Trustees**: Randomly selected citizens, NGO representatives
+4. **Government Trustees**: Limited access, cannot authorize operations unilaterally
+
+#### Threshold Requirements
+- **Normal Operations**: 7/10 trustees must approve
+- **Emergency Operations**: 9/10 trustees required
+- **Citizen Opt-Out**: Citizens can opt-out of government access (default: access allowed)
+- **Kill Switch Activation**: Varies by switch type (1-1000 signatures)
+
+### Zero-Knowledge Proof System
+
+#### Government Verification
+```rust
+// Verify government legitimacy without revealing data
+pub fn verify_government_request(&self, request: GovernmentRequest) -> ZKP {
+    // Create cryptographic proof of legitimacy
+    // Prove compliance without exposing sensitive information
+    // Maintain privacy while ensuring legal access
+}
+```
+
+#### Audit Trail Integrity
+```go
+// Immutable logging with Merkle tree verification
+type AuditLogger struct {
+    entries    []AuditEntry
+    merkleRoot []byte
+}
+
+func (a *AuditLogger) LogEvent(event AuditEntry) {
+    // Append with cryptographic hash chaining
+    // Maintain verifiable integrity
+}
+```
+
+### Emergency Response Architecture
+
+#### Kill Switch Hierarchy
+1. **Judicial Kill Switch**: Supreme Court authorization (1 signature)
+2. **Technical Kill Switch**: EFF + technical trustees (3 signatures)
+3. **Citizen Kill Switch**: Mass citizen signatures (1000+ signatures)
+4. **International Kill Switch**: UN/EU human rights bodies (2 signatures)
+5. **Admin Kill Switch**: System administrators (1 signature)
+
+#### Activation Triggers
+- **System Compromise**: Detected security breach
+- **Government Misuse**: Trustee consensus on abuse
+- **Citizen Opt-Out Surge**: Mass opt-out requests triggering scrutiny
+- **Legal Requirements**: Court orders
+- **Maintenance**: Scheduled system updates
+
 ## 🏗️ System Architecture
 
 ### High-Level Architecture
@@ -50,10 +151,13 @@ graph TB
         FA[Fraud Analytics<br/>Python - Port 8090]
     end
     
+    subgraph "Sync & Events Layer"
+        RD[(Redis Pub/Sub<br/>Event Sync)]
+        KF[Kafka<br/>Event Streaming]
+    end
+    
     subgraph "Data Layer"
         PG[(PostgreSQL<br/>Primary Database)]
-        RD[(Redis<br/>Cache & Sessions)]
-        KF[Kafka<br/>Event Streaming]
         VT[Vault<br/>Secret Management]
     end
     
@@ -99,6 +203,11 @@ graph TB
     
     KF --> FA
     FA --> PG
+    
+    RD --> CE
+    RD --> GC
+    RD --> FA
+    RD --> GW
     
     VT --> CE
     VT --> GC
@@ -231,6 +340,35 @@ graph TB
 - Transaction fraud monitoring
 - Application fraud detection
 - Biometric spoofing prevention
+
+## 🔄 Sync Architecture
+
+### Event-Driven Synchronization
+
+The platform implements comprehensive event-driven synchronization using Redis pub/sub for real-time cross-service communication and government feed integration.
+
+**Key Components**:
+- **Redis Pub/Sub**: Low-latency event distribution across all services
+- **Government Feed Sync**: Real-time synchronization with 25 government APIs
+- **Bidirectional Communication**: Services publish and subscribe to relevant events
+- **Event Correlation**: Request IDs for tracking sync operations across services
+
+### Sync Patterns
+
+**Government Data Sync**:
+- Government APIs publish data updates to Redis channels
+- Services subscribe to relevant government feed events
+- Real-time updates trigger verification and credential refreshes
+
+**Cross-Service Events**:
+- User registration events trigger fraud analysis
+- Verification results published for audit logging
+- Credential updates synchronized across all user interfaces
+
+**Mobile & Web Sync**:
+- WebSocket connections for real-time UI updates
+- Background sync for offline-online transitions
+- Event-driven state management in Flutter and React applications
 
 ## 🔄 Data Flow Architecture
 

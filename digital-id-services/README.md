@@ -4,13 +4,15 @@ High-performance microservices suite providing comprehensive API gateway and ide
 
 ## 🎯 Features
 
-- **Gin Web Framework**: HTTP/2 API gateway with JWT authentication and bcrypt hashing
-- **Microservices Architecture**: Separate services for Gateway, Registration, Verification, Credential, Audit
-- **Rate Limiting**: 100 req/min token bucket algorithm with Redis backend
+- **Gin Web Framework**: HTTP/2 API gateway with JWT authentication, bcrypt hashing, and AES encryption
+- **Microservices Architecture**: Separate services for Gateway, Registration, Verification, Credential, Audit with event sync
+- **Rate Limiting**: 100 req/min token bucket algorithm with Redis backend and distributed caching
+- **Event-Driven Sync**: Redis pub/sub for cross-system synchronization and government data subscription
 - **Enterprise Integrations**: GORM PostgreSQL, Kafka streaming, Redis caching, Elasticsearch logging
 - **CGO Integration**: Direct FFI calls to Rust core engine for cryptographic operations
+- **Privacy Protection**: AES encryption for sensitive data, secure password hashing, encrypted storage
 - **Observability**: Prometheus metrics, Jaeger tracing, structured JSON logging with Zap
-- **Security**: CORS, input validation, JWT middleware, circuit breakers with Hystrix
+- **Security**: CORS, input validation, JWT middleware, circuit breakers with Hystrix, encrypted communication
 
 ## 🏗️ Microservices Architecture
 
@@ -33,8 +35,8 @@ High-performance microservices suite providing comprehensive API gateway and ide
     ┌───────────────────────┼───────────────────────┐
     │                       │                       │
 ┌───▼────┐       ┌─────────▼──────────┐      ┌─────▼──────┐
-│ Kafka  │       │   Rust Core FFI    │      │   Redis    │
-│Streams │       │  (Crypto Engine)   │      │   Cache    │
+│ Redis  │       │   Rust Core FFI    │      │   Kafka    │
+│ Pub/Sub│       │  (Crypto Engine)   │      │   Streams  │
 └────────┘       └────────────────────┘      └────────────┘
 ```
 
@@ -42,11 +44,11 @@ High-performance microservices suite providing comprehensive API gateway and ide
 
 | Service | Port | Purpose | Key Dependencies |
 |---------|------|---------|------------------|
-| **API Gateway** | 8081 | Request routing, auth, rate limiting | Gin, JWT, CORS, Prometheus |
-| **Registration** | 8082 | User onboarding, document validation | GORM, Validator, Kafka |
-| **Verification** | 8083 | Identity verification, government APIs | WebClient, Circuit Breaker |
-| **Credential** | 8084 | Digital credential issuance/management | FFI to Rust, Redis cache |
-| **Audit** | 8085 | Compliance logging, event streaming | Kafka producer, Elasticsearch |
+| **API Gateway** | 8081 | Request routing, auth, rate limiting, event sync | Gin, JWT, CORS, Prometheus, Redis |
+| **Registration** | 8082 | User onboarding, document validation, event publishing | GORM, Validator, Kafka, Redis |
+| **Verification** | 8083 | Identity verification, government APIs, data subscription | WebClient, Circuit Breaker, Redis |
+| **Credential** | 8084 | Digital credential issuance/management, encrypted storage | FFI to Rust, Redis cache, AES |
+| **Audit** | 8085 | Compliance logging, event streaming, government sync | Kafka producer, Elasticsearch, Redis |
 
 ## API Endpoints
 

@@ -6,10 +6,11 @@ Modern dual-portal web application suite providing secure citizen and administra
 
 - **Next.js 14**: Server-side rendering with React 18, TypeScript 5.0, and App Router
 - **Dual Portal Architecture**: Dedicated Citizen Portal and Admin Dashboard with role-based access control
+- **Real-time Sync**: WebSocket integration for live updates and government feed synchronization
 - **Modern Tech Stack**: Tailwind CSS utility-first styling, Framer Motion animations, React Query data fetching
+- **Enhanced Security**: JWT authentication, CSP headers, XSS protection, CSRF prevention, input sanitization with DOMPurify
 - **Testing & Quality**: Jest unit testing, Cypress E2E testing, Storybook component library, ESLint + Prettier
 - **Performance & PWA**: Code splitting, image optimization, service workers, offline capability
-- **Enterprise Security**: JWT authentication, XSS protection, CSRF prevention, input sanitization with DOMPurify
 
 ## 🏗️ Architecture
 
@@ -24,6 +25,7 @@ Modern dual-portal web application suite providing secure citizen and administra
 │  │ • Authentication    │    │ • System Monitor    │         │
 │  │ • Credential Mgmt   │    │ • Analytics         │         │
 │  │ • Verification      │    │ • Audit Logs        │         │
+│  │ • Real-time Sync    │    │ • Live Updates      │         │
 │  └─────────────────────┘    └─────────────────────┘         │
 │           │                           │                     │
 │           └───────────────┬───────────┘                     │
@@ -32,6 +34,7 @@ Modern dual-portal web application suite providing secure citizen and administra
 │  │              Next.js 14 Framework               │         │
 │  │ • App Router  • SSR/SSG  • TypeScript 5.0      │         │
 │  │ • React Query • Zustand  • Tailwind CSS        │         │
+│  │ • WebSocket   • CSP      • Real-time Events    │         │
 │  └─────────────────────────────────────────────────┘         │
 │                           │                                 │
 └───────────────────────────┼─────────────────────────────────┘
@@ -39,6 +42,11 @@ Modern dual-portal web application suite providing secure citizen and administra
               ┌─────────────▼──────────────┐
               │      API Gateway           │
               │    (Go Backend 8081)       │
+              └────────────────────────────┘
+                            │
+              ┌─────────────▼──────────────┐
+              │   WebSocket Sync Service   │
+              │ (Real-time Government Feed)│
               └────────────────────────────┘
 ```
 
@@ -57,6 +65,8 @@ Modern dual-portal web application suite providing secure citizen and administra
 | **Styling** | Tailwind CSS, PostCSS, Sass/SCSS | Utility-first responsive design |
 | **Animation** | Framer Motion, CSS transitions | Smooth UI interactions |
 | **State** | Zustand, React Query (TanStack) | Global state + server state management |
+| **Real-time** | WebSocket, Server-Sent Events | Live synchronization and updates |
+| **Security** | DOMPurify, CSP Headers, JWT | XSS protection and secure communication |
 | **Forms** | React Hook Form, Zod validation | Type-safe form handling |
 | **Testing** | Jest, Cypress, React Testing Library | Unit + E2E test coverage |
 | **Dev Tools** | Storybook, ESLint, Prettier, Husky | Component library + code quality |
@@ -104,9 +114,9 @@ const response = await axios.post('/api/endpoint', data, {
 
 ### Network Security
 - **HTTPS Only**: All production requests use TLS encryption
+- **Content Security Policy**: CSP headers for XSS prevention and secure resource loading
 - **Request Timeouts**: 5-second timeouts prevent hanging requests
 - **CORS Headers**: Restricted cross-origin request handling
-- **Content Security Policy**: XSS prevention headers
 
 ## API Integration
 

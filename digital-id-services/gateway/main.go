@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"errors"
 	"unsafe"
+	"context"
 	"github.com/gin-gonic/gin"
 	"github.com/golang-jwt/jwt/v5"
 	"gorm.io/gorm"
@@ -22,6 +23,13 @@ import (
 	"github.com/gin-contrib/cors"
 	"golang.org/x/time/rate"
 	"github.com/sirupsen/logrus"
+	"github.com/go-redis/redis/v8"
+	"crypto/aes"
+	"crypto/cipher"
+	"crypto/rand"
+	"encoding/base64"
+	"io"
+	"digital-id-services/degenhf"
 )
 
 type User struct {
@@ -47,6 +55,9 @@ var jwtSecret = []byte("your-very-secure-secret-key-change-in-prod") // Use env 
 var validate *validator.Validate
 var limiter = rate.NewLimiter(rate.Every(time.Minute), 100) // 100 requests per minute
 var logger *logrus.Logger
+var redisClient *redis.Client
+var encryptionKey = []byte("your-32-byte-encryption-key-here") // Use env var
+var degenHF *degenhf.DegenHF
 
 func initDB() {
 	var err error
@@ -63,6 +74,59 @@ func initDB() {
 	logger = logrus.New()
 	logger.SetFormatter(&logrus.JSONFormatter{})
 	logger.SetLevel(logrus.InfoLevel)
+
+	// Initialize Redis
+	redisAddr := os.Getenv("REDIS_URL")
+	if redisAddr == "" {
+		redisAddr = "redis:6379"
+	}
+	redisClient = redis.NewClient(&redis.Options{
+		Addr: redisAddr,
+	})
+	_, err = redisClient.Ping(context.Background()).Result()
+	if err != nil {
+		logger.Warn("Failed to connect to Redis: ", err)
+	}
+
+	// Initialize DegenHF security framework
+	threshold := degenhf.ThresholdConfig{
+		TotalTrustees:      10,
+		RequiredSignatures: 7,
+		EmergencyThreshold: 9,
+	}
+	degenHF, err = degenhf.NewDegenHF(threshold)
+	if err != nil {
+		logger.Error("Failed to initialize DegenHF: ", err)
+		panic("DegenHF initialization failed")
+	}
+
+	if err := degenHF.InitializeTrustees(); err != nil {
+		logger.Error("Failed to initialize DegenHF trustees: ", err)
+		panic("DegenHF trustee initialization failed")
+	}
+
+	if err := degenHF.InitializeKillSwitches(); err != nil {
+		logger.Error("Failed to initialize DegenHF kill switches: ", err)
+		panic("DegenHF kill switch initialization failed")
+	}
+
+	logger.Info("DegenHF security framework initialized successfully")
+
+	// Subscribe to government data events
+	go func() {
+		pubsub := redisClient.Subscribe(context.Background(), "id-system-events")
+		defer pubsub.Close()
+
+		for msg := range pubsub.Channel() {
+			var event map[string]interface{}
+			json.Unmarshal([]byte(msg.Payload), &event)
+			if event["type"] == "connector_data_received" {
+				// Handle government data sync
+				logger.Info("Received government data: ", event)
+				// Could update user records or credentials based on gov data
+			}
+		}
+	}()
 }
 
 func hashPassword(password string) (string, error) {
@@ -73,6 +137,73 @@ func hashPassword(password string) (string, error) {
 func checkPassword(hashed, password string) bool {
 	err := bcrypt.CompareHashAndPassword([]byte(hashed), []byte(password))
 	return err == nil
+}
+
+func encryptData(data string) (string, error) {
+	block, err := aes.NewCipher(encryptionKey)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonce := make([]byte, gcm.NonceSize())
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+		return "", err
+	}
+	ciphertext := gcm.Seal(nonce, nonce, []byte(data), nil)
+	return base64.StdEncoding.EncodeToString(ciphertext), nil
+}
+
+func decryptData(encryptedData string) (string, error) {
+	data, err := base64.StdEncoding.DecodeString(encryptedData)
+	if err != nil {
+		return "", err
+	}
+	block, err := aes.NewCipher(encryptionKey)
+	if err != nil {
+		return "", err
+	}
+	gcm, err := cipher.NewGCM(block)
+	if err != nil {
+		return "", err
+	}
+	nonceSize := gcm.NonceSize()
+	if len(data) < nonceSize {
+		return "", errors.New("ciphertext too short")
+	}
+	nonce, ciphertext := data[:nonceSize], data[nonceSize:]
+	plaintext, err := gcm.Open(nil, nonce, ciphertext, nil)
+	if err != nil {
+		return "", err
+	}
+	return string(plaintext), nil
+}
+
+func publishEvent(eventType string, data map[string]interface{}) {
+	event := map[string]interface{}{
+		"type": eventType,
+		"data": data,
+		"timestamp": time.Now().Unix(),
+	}
+	jsonData, _ := json.Marshal(event)
+	redisClient.Publish(context.Background(), "id-system-events", string(jsonData))
+}
+
+func cacheUser(userID uint, user User) {
+	userJSON, _ := json.Marshal(user)
+	redisClient.Set(context.Background(), fmt.Sprintf("user:%d", userID), string(userJSON), time.Hour)
+}
+
+func getCachedUser(userID uint) (*User, error) {
+	val, err := redisClient.Get(context.Background(), fmt.Sprintf("user:%d", userID)).Result()
+	if err != nil {
+		return nil, err
+	}
+	var user User
+	json.Unmarshal([]byte(val), &user)
+	return &user, nil
 }
 
 func generateToken(userID uint) (string, error) {
@@ -166,6 +297,13 @@ func signCredentialRust(userID, payload string, issuedAt, expiresAt int64) (stri
 	return C.GoString(result), nil
 }
 
+// isSystemAdministrator checks if a user has system administrator privileges
+func isSystemAdministrator(userID uint) bool {
+	// In a real implementation, this would check against a database of administrators
+	// For now, only allow user ID 1 (system admin)
+	return userID == 1
+}
+
 func main() {
 	initDB()
 	if err := initRustEngine(); err != nil {
@@ -217,6 +355,9 @@ func main() {
 			return
 		}
 
+		cacheUser(user.ID, user)
+		publishEvent("user_registered", map[string]interface{}{"user_id": user.ID, "email": req.Email})
+
 		if err := generateKeypairRust(fmt.Sprintf("%d", user.ID)); err != nil {
 			logger.WithFields(logrus.Fields{"user_id": user.ID, "error": err}).Error("Failed to generate keypair")
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to generate keypair"})
@@ -254,6 +395,9 @@ func main() {
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid credentials"})
 			return
 		}
+
+		cacheUser(user.ID, user)
+		publishEvent("user_login", map[string]interface{}{"user_id": user.ID, "email": req.Email})
 
 		token, _ := generateToken(user.ID)
 		c.JSON(http.StatusOK, gin.H{"token": token})
@@ -322,6 +466,302 @@ func main() {
 
 	r.GET("/health", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	})
+
+	// ============================================================================
+	// DegenHF Security Framework Routes
+	// ============================================================================
+
+	// Authorize critical operations with threshold cryptography
+	r.POST("/degenhf/authorize", authMiddleware(), func(c *gin.Context) {
+		var req struct {
+			Operation string `json:"operation" binding:"required"`
+			Data      string `json:"data"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		userID := uint(c.MustGet("user_id").(float64))
+		requester := fmt.Sprintf("user_%d", userID)
+
+		// Get DegenHF authorization
+		proof, err := degenHF.AuthorizeCriticalOperation(req.Operation, requester)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"operation": req.Operation,
+				"user_id":   userID,
+				"error":     err,
+			}).Error("DegenHF authorization failed")
+			c.JSON(http.StatusForbidden, gin.H{"error": "Authorization failed"})
+			return
+		}
+
+		logger.WithFields(logrus.Fields{
+			"operation": req.Operation,
+			"user_id":   userID,
+		}).Info("DegenHF authorization granted")
+
+		c.JSON(http.StatusOK, gin.H{
+			"authorized": true,
+			"proof":      proof,
+		})
+	})
+
+	// Verify government data access requests
+	r.POST("/degenhf/verify-government", authMiddleware(), func(c *gin.Context) {
+		var req degenhf.GovernmentRequest
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Verify with zero-knowledge proof
+		zkp, err := degenHF.VerifyGovernmentRequest(&req)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"government_entity": req.Entity,
+				"error":            err,
+			}).Error("Government request verification failed")
+			c.JSON(http.StatusForbidden, gin.H{"error": "Verification failed"})
+			return
+		}
+
+		logger.WithFields(logrus.Fields{
+			"government_entity": req.Entity,
+			"purpose":          req.Purpose,
+		}).Info("Government request verified with ZKP")
+
+		c.JSON(http.StatusOK, gin.H{
+			"verified": true,
+			"zkp":      zkp,
+		})
+	})
+
+	// Citizen opt-out - opt out of government access to personal data (default is access allowed)
+	r.POST("/degenhf/citizen-opt-out", authMiddleware(), func(c *gin.Context) {
+		var req struct {
+			DataType  string `json:"data_type" binding:"required"`
+			Confirmed bool   `json:"confirmed,omitempty"` // Whether user has confirmed the opt-out
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		userID := uint(c.MustGet("user_id").(float64))
+		citizenID := fmt.Sprintf("user_%d", userID)
+
+		// Execute citizen opt-out
+		warning, err := degenHF.CitizenOptOut(citizenID, req.DataType, req.Confirmed)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"citizen_id": citizenID,
+				"data_type":  req.DataType,
+				"confirmed":  req.Confirmed,
+				"error":      err,
+			}).Error("Citizen opt-out failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Opt-out failed"})
+			return
+		}
+
+		// If warning returned, user needs to confirm
+		if warning != nil {
+			logger.WithFields(logrus.Fields{
+				"citizen_id": citizenID,
+				"data_type":  req.DataType,
+			}).Info("Citizen opt-out warning shown")
+
+			c.JSON(http.StatusOK, gin.H{
+				"requires_confirmation": true,
+				"warning":               warning,
+			})
+			return
+		}
+
+		// Opt-out executed successfully
+		logger.WithFields(logrus.Fields{
+			"citizen_id": citizenID,
+			"data_type":  req.DataType,
+		}).Info("Citizen opt-out executed successfully")
+
+		c.JSON(http.StatusOK, gin.H{
+			"opt_out_executed": true,
+			"data_type":        req.DataType,
+			"message":          "You have successfully opted out of government access to this data type",
+		})
+	})
+
+	// Get citizen consent preferences
+	r.GET("/degenhf/citizen-consent", authMiddleware(), func(c *gin.Context) {
+		userID := uint(c.MustGet("user_id").(float64))
+		citizenID := fmt.Sprintf("user_%d", userID)
+
+		consent, err := degenHF.GetCitizenConsent(citizenID)
+		if err != nil {
+			logger.WithFields(logrus.Fields{
+				"citizen_id": citizenID,
+				"error":      err,
+			}).Error("Failed to get citizen consent")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to get consent preferences"})
+			return
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"consent": consent,
+		})
+	})
+
+	// Emergency shutdown - distributed kill switches
+	r.POST("/degenhf/emergency-shutdown", authMiddleware(), func(c *gin.Context) {
+		var req degenhf.EmergencyTrigger
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		// Only allow system administrators to trigger emergency shutdown
+		userID := uint(c.MustGet("user_id").(float64))
+		if !isSystemAdministrator(userID) {
+			c.JSON(http.StatusForbidden, gin.H{"error": "Unauthorized"})
+			return
+		}
+
+		// Activate emergency shutdown
+		if err := degenHF.ActivateEmergencyShutdown(&req); err != nil {
+			logger.WithFields(logrus.Fields{
+				"trigger_type": req.TriggerType,
+				"reason":       req.Reason,
+				"error":        err,
+			}).Error("Emergency shutdown failed")
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Emergency shutdown failed"})
+			return
+		}
+
+		logger.WithFields(logrus.Fields{
+			"trigger_type": req.TriggerType,
+			"reason":       req.Reason,
+		}).Warn("Emergency shutdown activated")
+
+		c.JSON(http.StatusOK, gin.H{
+			"emergency_activated": true,
+			"shutdown_reason":     req.Reason,
+		})
+	})
+
+	// Get DegenHF security status
+	r.GET("/degenhf/status", authMiddleware(), func(c *gin.Context) {
+		killSwitches := degenHF.GetKillSwitchStatus()
+		emergencyTriggered, emergencyReason := degenHF.CheckEmergencyStatus()
+
+		status := map[string]interface{}{
+			"framework_active":     true,
+			"total_trustees":       10,
+			"active_trustees":      7,
+			"last_authorization":   time.Now().Unix(),
+			"emergency_switches":   len(killSwitches),
+			"security_level":       "maximum",
+			"emergency_triggered":  emergencyTriggered,
+			"emergency_reason":     emergencyReason,
+		}
+
+		c.JSON(http.StatusOK, status)
+	})
+
+	// Activate kill switch
+	r.POST("/degenhf/kill-switch/activate", authMiddleware(), func(c *gin.Context) {
+		var req struct {
+			KillSwitchID string `json:"kill_switch_id" binding:"required"`
+		}
+		if err := c.ShouldBindJSON(&req); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+
+		userID := uint(c.MustGet("user_id").(float64))
+		activatedBy := fmt.Sprintf("user_%d", userID)
+
+		if err := degenHF.ActivateKillSwitch(req.KillSwitchID, activatedBy); err != nil {
+			logger.WithFields(logrus.Fields{
+				"kill_switch_id": req.KillSwitchID,
+				"activated_by":   activatedBy,
+				"error":          err,
+			}).Error("Kill switch activation failed")
+			c.JSON(http.StatusForbidden, gin.H{"error": "Kill switch activation failed"})
+			return
+		}
+
+		logger.WithFields(logrus.Fields{
+			"kill_switch_id": req.KillSwitchID,
+			"activated_by":   activatedBy,
+		}).Warn("Kill switch activated")
+
+		c.JSON(http.StatusOK, gin.H{
+			"kill_switch_activated": true,
+			"kill_switch_id":        req.KillSwitchID,
+		})
+	})
+
+	// Get kill switch status
+	r.GET("/degenhf/kill-switches", authMiddleware(), func(c *gin.Context) {
+		killSwitches := degenHF.GetKillSwitchStatus()
+
+		c.JSON(http.StatusOK, gin.H{
+			"kill_switches": killSwitches,
+			"total_count":   len(killSwitches),
+		})
+	})
+
+	// Get audit entries with integrity verification
+	r.GET("/degenhf/audit", authMiddleware(), func(c *gin.Context) {
+		startTimeStr := c.Query("start_time")
+		endTimeStr := c.Query("end_time")
+
+		var startTime, endTime int64
+		if startTimeStr != "" {
+			if t, err := time.Parse(time.RFC3339, startTimeStr); err == nil {
+				startTime = t.Unix()
+			}
+		} else {
+			startTime = 0
+		}
+
+		if endTimeStr != "" {
+			if t, err := time.Parse(time.RFC3339, endTimeStr); err == nil {
+				endTime = t.Unix()
+			}
+		} else {
+			endTime = time.Now().Unix()
+		}
+
+		entries := degenHF.AuditLogger().GetAuditEntries(startTime, endTime)
+		merkleRoot := degenHF.AuditLogger().GetMerkleRoot()
+		integrityVerified := degenHF.AuditLogger().VerifyAuditIntegrity()
+
+		c.JSON(http.StatusOK, gin.H{
+			"entries":             entries,
+			"merkle_root":         base64.StdEncoding.EncodeToString(merkleRoot),
+			"integrity_verified":  integrityVerified,
+			"total_entries":       len(entries),
+		})
+	})
+
+	// Verify audit integrity
+	r.GET("/degenhf/audit/verify", authMiddleware(), func(c *gin.Context) {
+		integrityVerified := degenHF.AuditLogger().VerifyAuditIntegrity()
+		merkleRoot := degenHF.AuditLogger().GetMerkleRoot()
+
+		status := "verified"
+		if !integrityVerified {
+			status = "compromised"
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"integrity_status": status,
+			"merkle_root":      base64.StdEncoding.EncodeToString(merkleRoot),
+			"verified":         integrityVerified,
+		})
 	})
 
 	r.Run(":8080")

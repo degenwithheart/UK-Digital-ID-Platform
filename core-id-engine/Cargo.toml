@@ -35,6 +35,9 @@ zstd = "0.13"
 hex = "0.4"
 aes-gcm = "0.10"
 rand = "0.8"
+k256 = { version = "0.13", features = ["ecdsa", "sha256"] }
+sha3 = "0.10"
+rand_core = "0.6"
 
 [dev-dependencies]
 criterion = "0.5"

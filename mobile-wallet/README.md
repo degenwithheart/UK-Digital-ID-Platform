@@ -6,8 +6,9 @@ Cross-platform digital identity wallet application with advanced security, biome
 
 - **Flutter 3.13+**: Modern cross-platform framework with Material Design 3.0 and Cupertino widgets
 - **Multi-Platform Security**: Local Auth biometrics, Secure Storage, Firebase Auth integration, Google Sign-In
+- **Real-time Sync**: WebSocket integration for live credential updates and government feed synchronization
+- **Advanced Storage**: Hive NoSQL database, SQLite relational database, encrypted SharedPreferences with AES
 - **QR Code Integration**: Built-in scanner and generator for credential verification and sharing
-- **Advanced Storage**: Hive NoSQL database, SQLite relational database, encrypted SharedPreferences
 - **Rich UI**: Lottie animations, staggered animations, responsive design with ScreenUtil
 - **State Management**: BLoC pattern with Provider, reactive programming with GetX navigation
 
@@ -33,14 +34,19 @@ Cross-platform digital identity wallet application with advanced security, biome
 │  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐         │
 │  │    Auth     │  │   Network   │  │   Storage   │         │
 │  │ • Local     │  │ • Dio HTTP  │  │ • Hive DB   │         │
-│  │ • Firebase  │  │ • Retrofit  │  │ • SQLite    │         │
-│  │ • Google    │  │ • Timeouts  │  │ • Secure    │         │
+│  │ • Firebase  │  │ • WebSocket │  │ • SQLite    │         │
+│  │ • Google    │  │ • Retrofit  │  │ • Secure    │         │
 │  └─────────────┘  └─────────────┘  └─────────────┘         │
 └─────────────────────────────────────────────────────────────┘
                                │
                     ┌──────────▼──────────┐
                     │   API Gateway       │
                     │ (Go Backend 8081)   │
+                    └─────────────────────┘
+                               │
+                    ┌──────────▼──────────┐
+                    │   WebSocket Sync    │
+                    │ (Real-time Events)  │
                     └─────────────────────┘
 ```
 
@@ -51,7 +57,7 @@ Cross-platform digital identity wallet application with advanced security, biome
 | **UI Framework** | flutter | Cross-platform UI toolkit | 3.13+ |
 | **State Management** | flutter_bloc, provider | Reactive state with BLoC pattern | 8.1.3, 6.1.1 |
 | **Navigation** | get | Advanced routing and dependency injection | 4.6.6 |
-| **Networking** | dio, retrofit, http | HTTP client with interceptors | 5.3.2, 4.0.3 |
+| **Networking** | dio, retrofit, http, web_socket_channel | HTTP client with WebSocket sync | 5.3.2, 4.0.3, latest, 2.4.0 |
 | **Authentication** | local_auth, firebase_auth | Biometric + Firebase integration | 2.1.7, 4.15.3 |
 | **Storage** | hive, sqflite, flutter_secure_storage | NoSQL + SQL + encrypted storage | 2.2.3, 2.3.0, 9.0.0 |
 | **Camera** | camera, qr_code_scanner | Camera access + QR scanning | 0.10.5, 1.0.1 |
@@ -88,7 +94,7 @@ Future<bool> _authenticateBiometric() async {
 
 ### Secure Storage
 ```dart
-// Store encrypted credentials locally
+// Store AES-encrypted credentials locally
 await _secureStorage.write(key: 'credential_$id', value: encryptedData);
 
 // Retrieve and decrypt credentials
@@ -100,6 +106,14 @@ String? credential = await _secureStorage.read(key: 'credential_$id');
 - **Certificate Pinning**: Prevent man-in-the-middle attacks
 - **Request Timeouts**: 5-second timeouts prevent hanging connections
 - **Error Sanitization**: Sensitive data not exposed in error messages
+
+## 🔄 Sync Capabilities
+
+- **WebSocket Integration**: Real-time synchronization with government feed updates
+- **Event-Driven Updates**: Live credential status changes and verification notifications
+- **Provider Event Handling**: BLoC pattern integration for reactive sync state management
+- **Background Sync**: Automatic credential updates without user interaction
+- **Offline-Online Transition**: Seamless sync resumption when connectivity returns
 
 ## API Integration
 

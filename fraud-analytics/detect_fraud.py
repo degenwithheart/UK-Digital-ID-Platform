@@ -98,6 +98,34 @@ class FraudAlert:
     features: Dict[str, Any]
     evidence: List[str]
     recommended_actions: List[str]
+
+def publish_fraud_event(redis_client, alert: FraudAlert):
+    """Publish fraud detection event to Redis"""
+    event = {
+        "type": "fraud_detected",
+        "data": {
+            "alert_id": alert.alert_id,
+            "fraud_type": alert.fraud_type.value,
+            "risk_level": alert.risk_level.value,
+            "confidence_score": alert.confidence_score,
+            "user_id": alert.user_id,
+            "timestamp": alert.timestamp.isoformat()
+        }
+    }
+    redis_client.publish("id-system-events", json.dumps(event))
+
+def anonymize_data(data: pd.DataFrame) -> pd.DataFrame:
+    """Apply differential privacy and anonymization"""
+    # Add noise to sensitive features
+    sensitive_cols = ['income', 'balance', 'transaction_amount']
+    for col in sensitive_cols:
+        if col in data.columns:
+            noise = np.random.laplace(0, 1, size=len(data))
+            data[col] = data[col] + noise
+    # Hash identifiers
+    if 'user_id' in data.columns:
+        data['user_id'] = data['user_id'].apply(lambda x: hashlib.sha256(str(x).encode()).hexdigest())
+    return data
     false_positive_likelihood: float
 
 @dataclass
@@ -206,8 +234,29 @@ class AdvancedFraudDetector:
         self.document_analyzer = DocumentAnalyzer()
         self.biometric_analyzer = BiometricAnalyzer()
         self.running = False
+
+        # Subscribe to government data events
+        self._start_event_subscription()
         
         logger.info("Advanced Fraud Detection System initialized")
+    
+    def _start_event_subscription(self):
+        """Start subscription to government data events"""
+        def event_listener():
+            pubsub = self.redis_client.pubsub()
+            pubsub.subscribe("id-system-events")
+            for message in pubsub.listen():
+                if message['type'] == 'message':
+                    try:
+                        event = json.loads(message['data'])
+                        if event.get('type') == 'connector_data_received':
+                            # Use government data for fraud analysis
+                            logger.info(f"Received government data for fraud analysis: {event}")
+                            # Could update models or trigger analysis
+                    except json.JSONDecodeError:
+                        pass
+        
+        threading.Thread(target=event_listener, daemon=True).start()
     
     def _init_redis(self) -> Optional[redis.Redis]:
         """Initialize Redis connection"""
@@ -516,6 +565,57 @@ class AdvancedFraudDetector:
             joblib.dump(self.feature_selector, models_dir / 'feature_selector.pkl')
         
         logger.info("Models saved successfully")
+
+    def analyze_transaction(self, transaction_data: Dict[str, Any]) -> Optional[FraudAlert]:
+        """Analyze a single transaction for fraud"""
+        # Feature extraction
+        features = self._extract_features(pd.DataFrame([transaction_data]))
+        features_scaled = self.scalers['main'].transform(features)
+        features_selected = self.feature_selector.transform(features_scaled)
+        
+        # Ensemble prediction
+        predictions = {}
+        for model_name, model in self.models.items():
+            if model_name == 'isolation_forest':
+                pred = model.predict(features_selected)
+                predictions[model_name] = 1 if pred[0] == -1 else 0
+            else:
+                pred = model.predict_proba(features_selected)[0][1]
+                predictions[model_name] = pred
+        
+        # Weighted ensemble
+        weights = self.config['models']['ensemble_weights']
+        final_score = sum(predictions[model] * weight for model, weight in weights.items())
+        
+        # Determine risk level
+        thresholds = self.config['thresholds']
+        if final_score >= thresholds['critical_risk']:
+            risk_level = RiskLevel.CRITICAL
+        elif final_score >= thresholds['high_risk']:
+            risk_level = RiskLevel.HIGH
+        elif final_score >= thresholds['medium_risk']:
+            risk_level = RiskLevel.MEDIUM
+        else:
+            risk_level = RiskLevel.LOW
+        
+        if risk_level in [RiskLevel.HIGH, RiskLevel.CRITICAL]:
+            alert = FraudAlert(
+                alert_id=f"alert_{datetime.now().timestamp()}",
+                fraud_type=FraudType.TRANSACTION_FRAUD,
+                risk_level=risk_level,
+                confidence_score=final_score,
+                user_id=transaction_data.get('user_id', 'unknown'),
+                event_id=transaction_data.get('transaction_id', 'unknown'),
+                timestamp=datetime.now(),
+                features=transaction_data,
+                evidence=[f"High risk score: {final_score}"],
+                recommended_actions=["Block transaction", "Notify user", "Investigate"]
+            )
+            # Publish event
+            publish_fraud_event(self.redis_client, alert)
+            return alert
+        
+        return None
 
 
 class GraphAnalyzer:

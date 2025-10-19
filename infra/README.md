@@ -5,10 +5,11 @@ Enterprise-grade infrastructure platform for the UK Digital Identity Platform wi
 ## 🎯 Features
 
 - **Multi-Service Docker Compose**: 15+ containerized services with encrypted bridge networks
-- **Production Kubernetes**: Multi-namespace deployment with auto-scaling policies and admission controllers  
+- **Production Kubernetes**: Multi-namespace deployment with HPA auto-scaling and admission controllers  
+- **Event-Driven Sync**: Redis pub/sub integration for cross-service synchronization with secure routing
 - **Enterprise Data Stack**: PostgreSQL HA cluster, Redis cluster, Kafka streaming, HashiCorp Vault secrets
 - **Complete Observability**: Prometheus metrics, Grafana dashboards, Jaeger distributed tracing, ELK stack logging
-- **Security-First**: mTLS between services, network policies, secret management, vulnerability scanning
+- **Security-First**: mTLS between services, Network Policies for traffic control, secret management, vulnerability scanning
 - **CI/CD Integration**: Automated deployments with Helm charts, GitOps workflows, blue-green deployments
 
 ## 🏗️ Production Architecture
@@ -34,8 +35,16 @@ Enterprise-grade infrastructure platform for the UK Digital Identity Platform wi
 │ │ ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────┐   │ │
 │ │ │PostgreSQL│ │  Redis   │ │  Kafka   │ │MinIO/S3  │   │ │
 │ │ │ HA Cluster│ │ Cluster  │ │Streaming │ │ Storage  │   │ │
+│ │ │ (Sync)    │ │ (Pub/Sub)│ │(Events)  │ │ (Secure) │   │ │
 │ │ └──────────┘ └──────────┘ └──────────┘ └──────────┘   │ │
 │ └────────────────────────────────────────────────────────┘ │
+│                           │                                 │
+│ ┌─────────────────────────▼─────────────────────────────────┐ │
+│ │            Network Policies & Security Layer             │ │
+│ │                                                          │ │
+│ │ • Service Mesh (mTLS) • Network Policies • Event Routing │ │
+│ │ • Encrypted Networks  • Traffic Control  • Secure Sync   │ │
+│ └──────────────────────────────────────────────────────────┘ │
 └─────────────────────────────────────────────────────────────┘
 ```
 
@@ -59,6 +68,14 @@ Enterprise-grade infrastructure platform for the UK Digital Identity Platform wi
 | | elasticsearch | Log storage | 3-node cluster | 9200 |
 | **Security** | vault | Secret management | HA cluster | 8200 |
 | | consul | Service discovery | 3 nodes | 8500 |
+
+## 🔄 Sync Capabilities
+
+- **Redis Pub/Sub Integration**: Event-driven synchronization across all services
+- **HPA Auto-Scaling**: Horizontal Pod Autoscaling based on CPU/memory and custom metrics
+- **Network Policies**: Kubernetes Network Policies for secure inter-service communication
+- **Event Routing**: Secure routing of government feed events through encrypted channels
+- **Service Mesh**: Istio or Linkerd integration for advanced traffic management
 
 ## Services Configuration
 

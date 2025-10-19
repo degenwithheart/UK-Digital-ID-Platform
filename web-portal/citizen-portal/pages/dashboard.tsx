@@ -33,13 +33,42 @@ import {
   Speed,
 } from '@mui/icons-material';
 import { motion } from 'framer-motion';
-import { useAppSelector } from '@/store/hooks';
+import { useAppSelector, useAppDispatch } from '@/store/hooks';
 import { VERIFICATION_LEVELS } from '@/config/constants';
+import { updateCredentials } from '@/store/slices/walletSlice';
 
 const Dashboard: NextPage = () => {
   const router = useRouter();
+  const dispatch = useAppDispatch();
   const { user, isAuthenticated } = useAppSelector((state) => state.auth);
   const { credentials, services, totalCredentials, verifiedCredentials } = useAppSelector((state) => state.wallet);
+
+  // WebSocket for real-time sync
+  React.useEffect(() => {
+    if (!isAuthenticated) return;
+
+    const ws = new WebSocket('wss://api.uk-id-system.com/ws/dashboard');
+
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      if (data.type === 'credentials_updated') {
+        dispatch(updateCredentials(data.credentials));
+      } else if (data.type === 'connector_data_received') {
+        // Handle government data sync
+        console.log('Received government data:', data);
+        // Could refresh user data or show notifications
+      }
+    };
+
+    ws.onclose = () => {
+      // Reconnect logic
+      setTimeout(() => {
+        // reconnect
+      }, 5000);
+    };
+
+    return () => ws.close();
+  }, [isAuthenticated, dispatch]);
 
   // Redirect if not authenticated
   React.useEffect(() => {

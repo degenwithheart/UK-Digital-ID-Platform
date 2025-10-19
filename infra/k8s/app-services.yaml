@@ -48,6 +48,39 @@ spec:
             secretKeyRef:
               name: redis-secret
               key: redis-password
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "250m"
+          limits:
+            memory: "1Gi"
+            cpu: "500m"
+---
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: kotlin-connectors-hpa
+  namespace: digital-identity
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: kotlin-connectors
+  minReplicas: 3
+  maxReplicas: 10
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu
+      target:
+        type: Utilization
+        averageUtilization: 70
+  - type: Resource
+    resource:
+      name: memory
+      target:
+        type: Utilization
+        averageUtilization: 80
         - name: KAFKA_BROKERS
           value: "kafka-service:9092"
         - name: VAULT_ADDR
@@ -487,6 +520,45 @@ spec:
           limits:
             memory: "512Mi"
             cpu: "500m"
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: digital-identity-network-policy
+  namespace: digital-identity
+spec:
+  podSelector: {}
+  policyTypes:
+  - Ingress
+  - Egress
+  ingress:
+  - from:
+    - namespaceSelector:
+        matchLabels:
+          name: digital-identity
+    ports:
+    - protocol: TCP
+      port: 8080
+    - protocol: TCP
+      port: 3000
+    - protocol: TCP
+      port: 80
+  egress:
+  - to:
+    - namespaceSelector:
+        matchLabels:
+          name: digital-identity
+    ports:
+    - protocol: TCP
+      port: 5432  # Postgres
+    - protocol: TCP
+      port: 6379  # Redis
+    - protocol: TCP
+      port: 9092  # Kafka
+  - to: []
+    ports:
+    - protocol: TCP
+      port: 443  # HTTPS for external APIs
       volumes:
       - name: nginx-config
         configMap:

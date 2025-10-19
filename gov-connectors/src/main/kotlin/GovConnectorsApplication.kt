@@ -6,9 +6,23 @@ import org.springframework.context.annotation.Bean
 import org.springframework.web.reactive.function.client.WebClient
 import org.springframework.web.servlet.config.annotation.CorsRegistry
 import org.springframework.web.servlet.config.annotation.WebMvcConfigurer
+import com.uk.gov.connectors.service.SyncService
+import javax.annotation.PostConstruct
 
 @SpringBootApplication
-class GovConnectorsApplication
+class GovConnectorsApplication(
+    private val syncService: SyncService
+) {
+
+    @PostConstruct
+    fun init() {
+        syncService.subscribeToEvents()
+    }
+
+@Bean
+fun webClient(): WebClient = WebClient.builder()
+    .defaultHeader("Authorization", "Bearer secure-token") // Mock auth
+    .build()
 
 @Bean
 fun webClient(): WebClient = WebClient.builder()
